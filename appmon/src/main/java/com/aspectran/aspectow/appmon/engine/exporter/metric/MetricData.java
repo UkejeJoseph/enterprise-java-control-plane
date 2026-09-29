@@ -1,0 +1,119 @@
+/*
+ * Copyright (c) 2020-present The Aspectran Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.aspectran.aspectow.appmon.engine.exporter.metric;
+
+import com.aspectran.aspectow.appmon.engine.config.MetricInfo;
+import com.aspectran.utils.json.JsonBuilder;
+import org.jspecify.annotations.NonNull;
+
+import java.util.LinkedHashMap;
+
+/**
+ * A data transfer object (DTO) for collected metric data.
+ * It holds the metric's identity, formatting options, and the actual data points.
+ *
+ * <p>Created: 2025-07-01</p>
+ */
+public class MetricData {
+
+    private final String name;
+
+    private final String title;
+
+    private final boolean heading;
+
+    private String format;
+
+    private String unit;
+
+    private final LinkedHashMap<String, Object> data = new LinkedHashMap<>();
+
+    /**
+     * Instantiates a new MetricData.
+     * @param metricInfo the metric configuration
+     */
+    public MetricData(@NonNull MetricInfo metricInfo) {
+        this.name = metricInfo.getMetricId();
+        this.title = metricInfo.getTitle();
+        this.heading = metricInfo.isHeading();
+        this.format = metricInfo.getFormat();
+        this.unit = metricInfo.getUnit();
+    }
+
+    /**
+     * Sets the format string for the metric data, if not already set.
+     * @param format the format string
+     * @return this MetricData instance
+     */
+    public MetricData setFormat(String format) {
+        if (this.format == null) {
+            this.format = format;
+        }
+        return this;
+    }
+
+    /**
+     * Sets the unit of measurement for the metric data, if not already set.
+     * @param unit the unit of measurement as a string
+     * @return this MetricData instance
+     */
+    public MetricData setUnit(String unit) {
+        if (this.unit == null) {
+            this.unit = unit;
+        }
+        return this;
+    }
+
+    /**
+     * Gets a data point by its name.
+     * @param name the name of the data point
+     * @return the value of the data point
+     */
+    public Object getData(String name) {
+        return data.get(name);
+    }
+
+    /**
+     * Adds a data point to this metric data.
+     * @param name the name of the data point
+     * @param value the value of the data point
+     * @return this MetricData instance
+     */
+    public MetricData putData(String name, Object value) {
+        data.put(name, value);
+        return this;
+    }
+
+    /**
+     * Converts this object to its JSON representation.
+     * @return a JSON string
+     */
+    public String toJson() {
+        return new JsonBuilder()
+                .prettyPrint(false)
+                .nullWritable(false)
+                .object()
+                    .put("name", name)
+                    .put("title", title)
+                    .put("heading", heading)
+                    .put("format", format)
+                    .put("unit", unit)
+                    .put("data", data)
+                .endObject()
+                .toString();
+    }
+
+}

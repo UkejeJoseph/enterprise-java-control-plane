@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="https://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      layout:decorate="~{templates/__${page.layout}__}">
+<head>
+    <style>
+        .node-card {
+            border: 1px solid var(--bs-border-color);
+            background: var(--bs-tertiary-bg);
+            transition: all 0.2s ease;
+        }
+        .node-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            border-color: var(--accent-color);
+        }
+        .node-id-badge {
+            font-family: var(--bs-font-monospace);
+            font-size: 0.75rem;
+        }
+        .action-card {
+            transition: all 0.15s ease-in-out;
+            background: var(--bs-body-bg);
+            cursor: pointer;
+            border-color: var(--bs-border-color);
+        }
+        .action-card:hover {
+            border-color: var(--bs-primary) !important;
+            background: var(--bs-tertiary-bg);
+        }
+        .action-card:has(input:checked) {
+            border-color: var(--bs-primary) !important;
+            background-color: var(--bs-primary-subtle) !important;
+        }
+    </style>
+</head>
+<body>
+    <th:block layout:fragment="content">
+        <th:block th:if="${session.USER_INFO.hasRole('SUPER_ADMIN') || session.USER_INFO.hasRole('ADMIN') || session.USER_INFO.hasRole('DEMO')}">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-start gap-3 mb-3">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <div class="d-flex align-items-center gap-2 mb-1">
+                            <h3 class="fw-bold mb-0">Cluster Nodes</h3>
+                        </div>
+                        <p class="text-muted mb-0">Monitor and manage all active instances in the cluster.</p>
+                    </div>
+                    <button type="button" class="btn-close d-md-none ms-2" onclick="window.close()" aria-label="Close" title="Close" th:if="${page.layout == 'popup'}"></button>
+                </div>
+                <div class="d-flex flex-column align-items-end justify-content-end gap-2">
+                    <div class="d-flex flex-nowrap align-items-center gap-2">
+                        <span class="text-muted text-nowrap small">Cluster Mode:</span>
+                        <span class="fw-bold text-primary" th:text="${page.clusterMode.toUpperCase()}">GATEWAY</span>
+                    </div>
+                    <div class="d-flex flex-wrap flex-sm-nowrap justify-content-end align-items-center gap-2">
+                        <div class="input-group input-group-sm" style="max-width: 260px;">
+                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                            <input type="text" id="node-search" class="form-control" placeholder="Search nodes...">
+                        </div>
+                        <button id="bulk-ctrl-btn" class="btn btn-outline-warning btn-sm text-nowrap" data-bs-toggle="modal" data-bs-target="#bulkControlModal" th:if="${session.USER_INFO.hasPermission('NODE_MANAGE') || session.USER_INFO.hasRole('SUPER_ADMIN') || session.USER_INFO.hasRole('DEMO')}">
+                            <i class="bi bi-sliders me-1"></i> Bulk Control
+                        </button>
+                        <button class="btn btn-outline-primary btn-sm text-nowrap" onclick="location.reload()">
+                            <i class="bi bi-arrow-clockwise"></i> Refresh
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <th:block th:if="${page.clusterMode == 'gateway' and page.groups != null}">
+                <ul class="nav nav-btn-tabs mb-3" id="clusterTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="all-tab" data-bs-toggle="tab" data-bs-target="#all-nodes" type="button" role="tab">
+                            All Nodes <span class="badge bg-body-secondary text-body-secondary ms-auto" th:text="${page.nodes != null ? #lists.size(page.nodes) : 0}">0</span>
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation" th:each="group : ${page.groups}">
+                        <button class="nav-link" th:id="${group.id} + '-tab'" data-bs-toggle="tab" th:data-bs-target="'#group-' + ${group.id}" type="button" role="tab">
+                            <span th:text="${group.title}">Group Title</span>
+                            <span class="badge bg-body-secondary text-body-secondary ms-auto" th:text="${page.groupedNodes != null && page.groupedNodes[group.id] != null ? #lists.size(page.groupedNodes[group.id]) : 0}">0</span>
+                        </button>
+                    </li>
+                </ul>
+                <div class="tab-content" id="clusterTabContent">
+                    <div class="tab-pane fade show active" id="all-nodes" role="tabpanel">
+                        <div class="row g-3">
+                            <th:block th:each="nodeItem : ${page.nodes}">
+                                <div class="col-md-6 col-xxl-4">
+                                    <th:block th:insert="~{::node-card(nodeInfo=${nodeItem})}"></th:block>
+                                </div>
+                            </th:block>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" th:each="group : ${page.groups}" th:id="'group-' + ${group.id}" role="tabpanel">
+                        <div class="mb-3 px-1" th:if="${group.description}">
+                            <p class="text-muted small mb-0" th:text="${group.description}">Group Description</p>
+                        </div>
+                        <div class="row g-3">
+                            <th:block th:if="${page.groupedNodes != null}" th:each="nodeItem : ${page.groupedNodes[group.id]}">
+                                <div class="col-lg-6 col-xxl-4">
+                                    <th:block th:insert="~{::node-card(nodeInfo=${nodeItem})}"></th:block>
+                                </div>
+                            </th:block>
+                        </div>
+                    </div>
+                </div>
+            </th:block>
+
+            <th:block th:if="${page.clusterMode != 'gateway' or page.groups == null}">
+                <div class="row g-3">
+                    <th:block th:each="nodeItem : ${page.nodes}">
+                        <div class="col-md-6 col-xxl-4">
+                            <th:block th:insert="~{::node-card(nodeInfo=${nodeItem})}"></th:block>
+                        </div>
+                    </th:block>
+                </div>
+            </th:block>
+
+            <!-- Fragment for node card -->
+            <th:block th:fragment="node-card(nodeInfo)">
+                <div class="card node-card p-3 p-lg-4 h-100" th:if="${nodeInfo != null}"
+                     th:data-node-id="${nodeInfo.id}"
+                     th:data-node-title="${nodeInfo.title}"
+                     th:data-node-host="${nodeInfo.host}"
+                     th:data-node-group="${nodeInfo.group}">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <h5 class="fw-bold mb-0" th:text="${nodeInfo.title}">Node Title</h5>
+                            <span class="badge bg-secondary node-id-badge mt-1" th:text="${nodeInfo.id}">node-id</span>
+                        </div>
+                        <div class="d-flex flex-column align-items-end">
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="status-indicator" th:classappend="${nodeInfo.status == 'live' ? 'bg-success' : (nodeInfo.status == 'paused' ? 'bg-warning' : (nodeInfo.status == 'stopping' ? 'bg-warning' : 'bg-danger'))}"></span>
+                                <span class="small fw-bold text-uppercase" th:classappend="${nodeInfo.status == 'live' ? 'text-success' : (nodeInfo.status == 'paused' ? 'text-warning' : (nodeInfo.status == 'stopping' ? 'text-warning' : 'text-danger'))}" th:text="${nodeInfo.status}">LIVE</span>
+                            </div>
+                            <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle mt-1 ms-1" th:if="${nodeInfo.console}">Console</span>
+                        </div>
+                    </div>
+                    <div class="border-top pt-3">
+                        <div class="row g-2 small">
+                            <div class="col-5 text-muted">Host Address</div>
+                            <div class="col-7 text-end fw-medium" th:text="${nodeInfo.host}">127.0.0.1</div>
+                            <div class="col-5 text-muted">Service Port</div>
+                            <div class="col-7 text-end fw-medium" th:text="${nodeInfo.port}">8080</div>
+                            <th:block th:if="${page.clusterMode == 'gateway'}">
+                                <div class="col-5 text-muted">Node Group</div>
+                                <div class="col-7 text-end fw-medium text-truncate" th:text="${nodeInfo.group ?: 'N/A'}" th:title="${nodeInfo.group ?: 'N/A'}">Group</div>
+                            </th:block>
+                        </div>
+                    </div>
+                    <div class="mt-4 d-flex flex-column flex-sm-row gap-2">
+                        <a href="javascript:void(0)" th:onclick="openAppMon([[${nodeInfo.id}]])" class="btn btn-sm btn-outline-secondary flex-grow-1">
+                            <i class="bi bi-activity"></i> Metrics
+                        </a>
+                        <a th:if="${session.USER_INFO.hasPermission('COMMAND_EXECUTE') || session.USER_INFO.hasRole('SUPER_ADMIN')}"
+                           href="javascript:void(0)" th:onclick="openCommands([[${nodeInfo.id}]])" class="btn btn-sm btn-outline-secondary flex-grow-1">
+                            <i class="bi bi-terminal"></i> Commands
+                        </a>
+                        <div class="btn-group flex-grow-1" th:if="${session.USER_INFO.hasPermission('NODE_MANAGE') || session.USER_INFO.hasRole('SUPER_ADMIN') || session.USER_INFO.hasRole('DEMO')}">
+                            <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle w-100" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="bi bi-gear"></i> Actions
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                <li class="action-pause" th:style="${nodeInfo.status == 'live' ? '' : 'display:none;'}">
+                                    <a class="dropdown-item text-warning animate-color" href="javascript:void(0)" th:onclick="pauseNode([[${nodeInfo.id}]])">
+                                        <i class="bi bi-pause-fill me-1"></i> Pause Node
+                                    </a>
+                                </li>
+                                <li class="action-resume" th:style="${nodeInfo.status == 'paused' ? '' : 'display:none;'}">
+                                    <a class="dropdown-item text-success animate-color" href="javascript:void(0)" th:onclick="resumeNode([[${nodeInfo.id}]])">
+                                        <i class="bi bi-play-fill me-1"></i> Resume Node
+                                    </a>
+                                </li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li>
+                                    <a class="dropdown-item text-primary animate-color" href="javascript:void(0)" th:onclick="restartNode([[${nodeInfo.id}]])" title="Gracefully recreate ActivityContext and reload classes">
+                                        <i class="bi bi-arrow-clockwise me-1"></i> Restart Service <span class="badge bg-primary-subtle text-primary border border-primary-subtle small ms-1">Hot</span>
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item text-danger animate-color" href="javascript:void(0)" th:onclick="restartServer([[${nodeInfo.id}]])" title="Fully restart the OS daemon/service process and JVM">
+                                        <i class="bi bi-power me-1"></i> Restart Server <span class="badge bg-danger-subtle text-danger border border-danger-subtle ms-1">Cold</span>
+                                    </a>
+                                </li>
+                                <li th:if="${session.USER_INFO.hasPermission('BUILD_VIEW') || session.USER_INFO.hasPermission('BUILD_EXECUTE') || session.USER_INFO.hasRole('SUPER_ADMIN')}"><hr class="dropdown-divider"></li>
+                                <li th:if="${session.USER_INFO.hasPermission('BUILD_VIEW') || session.USER_INFO.hasPermission('BUILD_EXECUTE') || session.USER_INFO.hasRole('SUPER_ADMIN')}">
+                                    <a class="dropdown-item text-body-secondary animate-color" href="javascript:void(0)" th:onclick="openAudit([[${nodeInfo.id}]])" title="View build &amp; deployment audit history for this node">
+                                        <i class="bi bi-shield-check me-1"></i> Audit Trail
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </th:block>
+
+            <!-- Bulk Control Modal -->
+            <div class="modal fade" id="bulkControlModal" tabindex="-1" aria-labelledby="bulkControlModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content text-start">
+                        <div class="modal-header">
+                            <h5 class="modal-title fw-bold" id="bulkControlModalLabel"><i class="bi bi-sliders text-warning me-2"></i>Cluster Bulk Control</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <form id="bulk-control-form">
+                                <div class="mb-3">
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <label class="form-label fw-semibold small text-muted text-uppercase mb-0">1. Select Target Nodes</label>
+                                        <div class="d-flex align-items-center gap-2">
+                                            <div class="form-check form-check-inline mb-0 small" id="bulk-exclude-console-wrapper">
+                                                <input class="form-check-input" type="checkbox" id="bulk-exclude-console" checked>
+                                                <label class="form-check-label small fw-medium text-secondary" for="bulk-exclude-console">
+                                                    Exclude Console
+                                                </label>
+                                            </div>
+                                            <button type="button" class="btn btn-link btn-xs text-decoration-none p-0" id="bulk-select-all">Select All</button>
+                                            <button type="button" class="btn btn-link btn-xs text-decoration-none p-0 text-secondary" id="bulk-deselect-all">Deselect All</button>
+                                        </div>
+                                    </div>
+                                    <div class="border rounded p-2 bg-body-tertiary" id="bulk-node-list" style="max-height: 220px; overflow-y: auto;">
+                                        <!-- Dynamic Group & Node checkboxes -->
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold small text-muted text-uppercase mb-2">2. Action</label>
+                                    <div class="row g-2">
+                                        <!-- PAUSE -->
+                                        <div class="col-sm-6">
+                                            <label class="card h-100 p-2.5 p-2 action-card rounded-3 shadow-none" for="bulkActionPause">
+                                                <div class="d-flex align-items-start gap-2">
+                                                    <input class="form-check-input mt-1 flex-shrink-0" type="radio" name="bulkAction" id="bulkActionPause" value="pause" checked>
+                                                    <div class="flex-grow-1">
+                                                        <div class="fw-bold text-warning small d-flex align-items-center gap-1 mb-1">
+                                                            <i class="bi bi-pause-circle-fill"></i> PAUSE
+                                                        </div>
+                                                        <div class="text-muted" style="font-size: 0.75rem; line-height: 1.35;">
+                                                            Temporarily stop accepting incoming traffic and pause background activities.
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </label>
+                                        </div>
+
+                                        <!-- RESUME -->
+                                        <div class="col-sm-6">
+                                            <label class="card h-100 p-2.5 p-2 action-card rounded-3 shadow-none" for="bulkActionResume">
+                                                <div class="d-flex align-items-start gap-2">
+                                                    <input class="form-check-input mt-1 flex-shrink-0" type="radio" name="bulkAction" id="bulkActionResume" value="resume">
+                                                    <div class="flex-grow-1">
+                                                        <div class="fw-bold text-success small d-flex align-items-center gap-1 mb-1">
+                                                            <i class="bi bi-play-circle-fill"></i> RESUME
+                                                        </div>
+                                                        <div class="text-muted" style="font-size: 0.75rem; line-height: 1.35;">
+                                                            Resume paused services to accept traffic and reactivate background jobs.
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </label>
+                                        </div>
+
+                                        <!-- RESTART SERVICE -->
+                                        <div class="col-sm-6">
+                                            <label class="card h-100 p-2.5 p-2 action-card rounded-3 shadow-none" for="bulkActionRestart">
+                                                <div class="d-flex align-items-start gap-2">
+                                                    <input class="form-check-input mt-1 flex-shrink-0" type="radio" name="bulkAction" id="bulkActionRestart" value="restart-service">
+                                                    <div class="flex-grow-1">
+                                                        <div class="fw-bold text-primary small d-flex align-items-center gap-1 mb-1">
+                                                            <i class="bi bi-arrow-clockwise"></i> RESTART SERVICE
+                                                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-1">Hot</span>
+                                                        </div>
+                                                        <div class="text-muted" style="font-size: 0.75rem; line-height: 1.35;">
+                                                            Gracefully recreate ActivityContext and reload classes without stopping the JVM.
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </label>
+                                        </div>
+
+                                        <!-- RESTART SERVER -->
+                                        <div class="col-sm-6">
+                                            <label class="card h-100 p-2.5 p-2 action-card rounded-3 shadow-none" for="bulkActionRestartServer">
+                                                <div class="d-flex align-items-start gap-2">
+                                                    <input class="form-check-input mt-1 flex-shrink-0" type="radio" name="bulkAction" id="bulkActionRestartServer" value="restart-server">
+                                                    <div class="flex-grow-1">
+                                                        <div class="fw-bold text-danger small d-flex align-items-center gap-1 mb-1">
+                                                            <i class="bi bi-power"></i> RESTART SERVER
+                                                            <span class="badge bg-danger-subtle text-danger border border-danger-subtle ms-1">Cold</span>
+                                                        </div>
+                                                        <div class="text-muted" style="font-size: 0.75rem; line-height: 1.35;">
+                                                            Completely restart the OS daemon/service process and JVM instance.
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+                            <button type="button" id="execute-bulk-btn" class="btn btn-primary btn-sm px-4">Execute Action</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div th:if="${page.layout == 'popup'}" class="d-flex justify-content-end mt-3 pt-3 border-top d-print-none">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="window.close()">Close</button>
+            </div>
+        </th:block>
+        <div th:unless="${session.USER_INFO.hasRole('SUPER_ADMIN') || session.USER_INFO.hasRole('ADMIN') || session.USER_INFO.hasRole('DEMO')}" class="alert alert-danger my-4">
+            <h4 class="alert-heading"><i class="bi bi-exclamation-triangle-fill"></i> Access Denied</h4>
+            <p class="mb-0">You do not have permission to access this page.</p>
+        </div>
+    </th:block>
+
+    <th:block layout:fragment="script">
+        <script th:inline="javascript">
+            const contextPath = [[@{/}]].replace(/\/$/, '');
+            const clusterMode = [[${page.clusterMode}]];
+            const isGatewayMode = (clusterMode === 'gateway');
+            const isDirectMode = (clusterMode !== 'gateway');
+            const node = [[${page.node}]];
+            let nodes = [[${page.nodes}]];
+            const isDemoUser = /*[[${session.USER_INFO.hasRole('DEMO')}]]*/ false;
+
+            function openAppMon(nodeId) {
+                const url = contextPath + "/appmon/dashboard/popup/?nodeId=" + nodeId;
+                const name = "appmon_dashboard_popup_" + nodeId.replace(/[^a-zA-Z0-9]/g, '_');
+                const features = "width=1500,height=1045,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes";
+                const popup = window.open(url, name, features);
+                if (popup) {
+                    popup.focus();
+                } else {
+                    alert("Please allow popups for this site.");
+                }
+            }
+
+            function openCommands(nodeId) {
+                const url = contextPath + "/cluster/commands/popup/?nodeId=" + nodeId;
+                const name = "cluster_commands_popup_" + nodeId.replace(/[^a-zA-Z0-9]/g, '_');
+                const features = "width=1500,height=1045,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes";
+                const popup = window.open(url, name, features);
+                if (popup) {
+                    popup.focus();
+                } else {
+                    alert("Please allow popups for this site.");
+                }
+            }
+
+            function openAudit(nodeId) {
+                const url = contextPath + "/cluster/build/audit/?nodeId=" + encodeURIComponent(nodeId) + "&layout=popup";
+                const name = "cluster_audit_popup_" + nodeId.replace(/[^a-zA-Z0-9]/g, '_');
+                const features = "width=1500,height=1045,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes";
+                const popup = window.open(url, name, features);
+                if (popup) {
+                    popup.focus();
+                } else {
+                    alert("Please allow popups for this site.");
+                }
+            }
+
+            function restartNode(nodeId) {
+                if (isDemoUser) {
+                    alert("Restarting service is not allowed in the demo environment.");
+                    return;
+                }
+                if (confirm("Are you sure you want to restart the service on node '" + nodeId + "'?\n\nThis will recreate the ActivityContext and reload classes without stopping the JVM process.")) {
+                    const url = contextPath + "/cluster/nodes/" + nodeId + "/restart-service";
+                    fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Accept': 'application/json'
+                        }
+                    })
+                    .then(response => {
+                        if (response.status === 403) {
+                            throw new Error("Access Denied: Demo users are not allowed to restart service.");
+                        }
+                        if (!response.ok) {
+                            throw new Error("HTTP error " + response.status);
+                        }
+                        return response.json();
+                    })
+                    .then(res => {
+                        if (res.success) {
+                            updateNodeStatus({ id: nodeId, status: 'stopping' });
+                        } else {
+                            alert("Failed to dispatch service restart command: " + (res.error ? res.error.message : "Unknown error"));
+                        }
+                    })
+                    .catch(err => {
+                        console.error("Error dispatching service restart command:", err);
+                        alert(err.message || "Error communicating with the server.");
+                    });
+                }
+            }
+
+            function restartServer(nodeId) {
+                if (isDemoUser) {
+                    alert("Restarting server is not allowed in the demo environment.");
+                    return;
+                }
+                if (confirm("Are you sure you want to reboot the server process on node '" + nodeId + "'?\n\nWarning: This will terminate the OS daemon process and restart the JVM. The node will be temporarily offline until JVM reboot completes.")) {
+                    const url = contextPath + "/cluster/nodes/" + nodeId + "/restart-server";
+                    fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Accept': 'application/json'
+                        }
+                    })
+                    .then(response => {
+                        if (response.status === 403) {
+                            throw new Error("Access Denied: Demo users are not allowed to restart server.");
+                        }
+                        if (!response.ok) {
+                            throw new Error("HTTP error " + response.status);
+                        }
+                        return response.json();
+                    })
+                    .then(res => {
+                        if (res.success) {
+                            updateNodeStatus({ id: nodeId, status: 'stopping' });
+                            pollNodeRecovery(nodeId);
+                        } else {
+                            alert("Failed to dispatch server restart command: " + (res.error ? res.error.message : "Unknown error"));
+                        }
+                    })
+                    .catch(err => {
+                        console.error("Error dispatching server restart command:", err);
+                        alert(err.message || "Error communicating with the server.");
+                    });
+                }
+            }
+
+            function pollNodeRecovery(nodeId) {
+                let attempts = 0;
+                const maxAttempts = 40; // 80 seconds
+                const pollInterval = setInterval(() => {
+                    attempts++;
+                    fetch(contextPath + "/cluster/build/health/" + nodeId, {
+                        headers: { 'Accept': 'application/json' }
+                    })
+                    .then(res => res.json())
+                    .then(res => {
+                        if (res.success && res.data && res.data.alive) {
+                            clearInterval(pollInterval);
+                            updateNodeStatus({ id: nodeId, status: 'live' });
+                        } else if (attempts >= maxAttempts) {
+                            clearInterval(pollInterval);
+                        }
+                    })
+                    .catch(() => {
+                        if (attempts >= maxAttempts) {
+                            clearInterval(pollInterval);
+                        }
+                    });
+                }, 2000);
+            }
+
+            function pauseNode(nodeId) {
+                if (isDemoUser) {
+                    alert("Pausing nodes is not allowed in the demo environment.");
+                    return;
+                }
+                if (confirm("Are you sure you want to pause node '" + nodeId + "'?")) {
+                    const url = contextPath + "/cluster/nodes/" + nodeId + "/pause";
+                    fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Accept': 'application/json'
+                        }
+                    })
+                    .then(response => {
+                        if (response.status === 403) {
+                            throw new Error("Access Denied: Demo users are not allowed to pause nodes.");
+                        }
+                        if (!response.ok) {
+                            throw new Error("HTTP error " + response.status);
+                        }
+                        return response.json();
+                    })
+                    .then(res => {
+                        if (!res.success) {
+                            alert("Failed to dispatch pause command: " + (res.error ? res.error.message : "Unknown error"));
+                        }
+                    })
+                    .catch(err => {
+                        console.error("Error dispatching pause command:", err);
+                        alert(err.message || "Error communicating with the server.");
+                    });
+                }
+            }
+
+            function resumeNode(nodeId) {
+                if (isDemoUser) {
+                    alert("Resuming nodes is not allowed in the demo environment.");
+                    return;
+                }
+                if (confirm("Are you sure you want to resume node '" + nodeId + "'?")) {
+                    const url = contextPath + "/cluster/nodes/" + nodeId + "/resume";
+                    fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Accept': 'application/json'
+                        }
+                    })
+                    .then(response => {
+                        if (response.status === 403) {
+                            throw new Error("Access Denied: Demo users are not allowed to resume nodes.");
+                        }
+                        if (!response.ok) {
+                            throw new Error("HTTP error " + response.status);
+                        }
+                        return response.json();
+                    })
+                    .then(res => {
+                        if (!res.success) {
+                            alert("Failed to dispatch resume command: " + (res.error ? res.error.message : "Unknown error"));
+                        }
+                    })
+                    .catch(err => {
+                        console.error("Error dispatching resume command:", err);
+                        alert(err.message || "Error communicating with the server.");
+                    });
+                }
+            }
+
+            function updateNodeStatus(node) {
+                if (nodes && node && node.id) {
+                    const target = nodes.find(n => n.id === node.id);
+                    if (target) {
+                        target.status = node.status;
+                    }
+                }
+                const $card = $(`.node-card[data-node-id="${node.id}"]`);
+                if ($card.length) {
+                    const $dot = $card.find('.status-indicator');
+                    const $statusText = $card.find('.small.fw-bold');
+                    const status = node.status;
+                    if (status) {
+                        $dot.removeClass('bg-success bg-warning bg-danger')
+                            .addClass(status === 'live' ? 'bg-success' : (status === 'paused' ? 'bg-warning' : (status === 'stopping' ? 'bg-warning' : 'bg-danger')));
+                        $statusText.removeClass('text-success text-warning text-danger')
+                            .addClass(status === 'live' ? 'text-success' : (status === 'paused' ? 'text-warning' : (status === 'stopping' ? 'text-warning' : 'text-danger')))
+                            .text(status.toUpperCase());
+                        if (status === 'live') {
+                            $card.find('.action-pause').show();
+                            $card.find('.action-resume').hide();
+                        } else if (status === 'paused') {
+                            $card.find('.action-pause').hide();
+                            $card.find('.action-resume').show();
+                        } else {
+                            $card.find('.action-pause').hide();
+                            $card.find('.action-resume').hide();
+                        }
+                    }
+                } else {
+                    showNewNodeNotification(node.id);
+                }
+            }
+
+            function showNewNodeNotification(nodeId) {
+                const $notification = $("#new-node-notification");
+                if ($notification.length > 0) {
+                    $notification.find(".node-id").text(nodeId);
+                    $notification.find(".refresh-btn").off("click").on("click", () => {
+                        location.reload();
+                    });
+                    $notification.fadeIn();
+                } else {
+                    const result = confirm("A new node '" + nodeId + "' has joined the cluster. Would you like to refresh the dashboard?");
+                    if (result) {
+                        location.reload();
+                    }
+                }
+            }
+
+            function filterNodes() {
+                const query = ($('#node-search').val() || '').toLowerCase();
+                const totalNodes = nodes ? nodes.length : $('.node-card').length;
+                let visibleCount = 0;
+                
+                $('.node-card').each(function() {
+                    const $card = $(this);
+                    const $wrapper = $card.closest('[class*="col-"]');
+                    const id = ($card.data('node-id') || '').toString().toLowerCase();
+                    const title = ($card.data('node-title') || '').toString().toLowerCase();
+                    const host = ($card.data('node-host') || '').toString().toLowerCase();
+                    const group = ($card.data('node-group') || '').toString().toLowerCase();
+                    const match = !query || id.includes(query) || title.includes(query) || host.includes(query) || group.includes(query);
+                    if ($wrapper.length) {
+                        $wrapper.toggle(match);
+                    } else {
+                        $card.toggle(match);
+                    }
+                    if (match) visibleCount++;
+                });
+
+                if (query) {
+                    $('#total-node-count').text(visibleCount + ' / ' + totalNodes + ' Nodes');
+                } else {
+                    $('#total-node-count').text(totalNodes + ' Nodes');
+                }
+
+                if ($('#clusterTabContent').length > 0) {
+                    $('#clusterTabContent .tab-pane').each(function() {
+                        const $pane = $(this);
+                        const visibleCards = $pane.find('.node-card:visible').length;
+                        let $noMatch = $pane.find('.no-nodes-match-msg');
+                        if (visibleCards === 0) {
+                            if ($noMatch.length === 0) {
+                                $pane.append(`
+                                    <div class="no-nodes-match-msg text-center py-5">
+                                        <i class="bi bi-search fs-1 text-muted mb-3"></i>
+                                        <h5 class="fw-bold">No nodes match your search</h5>
+                                    </div>
+                                `);
+                            } else {
+                                $noMatch.show();
+                            }
+                        } else if ($noMatch.length > 0) {
+                            $noMatch.hide();
+                        }
+                    });
+                } else {
+                    const visibleCards = $('.node-card:visible').length;
+                    let $noMatch = $('#no-nodes-match-msg');
+                    if (visibleCards === 0) {
+                        if ($noMatch.length === 0) {
+                            $('.node-card').first().closest('.row').after(`
+                                <div id="no-nodes-match-msg" class="text-center py-5">
+                                    <i class="bi bi-search fs-1 text-muted mb-3"></i>
+                                    <h5 class="fw-bold">No nodes match your search</h5>
+                                </div>
+                            `);
+                        } else {
+                            $noMatch.show();
+                        }
+                    } else if ($noMatch.length > 0) {
+                        $noMatch.hide();
+                    }
+                }
+            }
+
+            $(function() {
+                $('#node-search').on('input', filterNodes);
+
+                let clients = [];
+                let isUnloading = false;
+                $(window).on('beforeunload pagehide', function() {
+                    isUnloading = true;
+                    clients.forEach(c => c.stop());
+                });
+
+                function refreshNodeList() {
+                    return fetch(contextPath + "/cluster/nodes/list", {
+                            headers: { 'Accept': 'application/json' }
+                        })
+                        .then(res => res.json())
+                        .then(res => {
+                            if (res.success && res.data) {
+                                nodes = res.data;
+                                nodes.forEach(n => updateNodeStatus(n));
+                                return res.data;
+                            }
+                        })
+                        .catch(err => {
+                            console.error("Failed to refresh node list:", err);
+                        });
+                }
+
+                function createConsoleClient(targetNode) {
+                    return new ConsoleClient(targetNode, {
+                        onBeforeConnect: () => {
+                            if (isUnloading) {
+                                return Promise.reject(new Error("Page is unloading"));
+                            }
+                            return fetch(contextPath + "/cluster/token", {
+                                    headers: { 'Accept': 'application/json' }
+                                })
+                                .then(response => {
+                                    if (!response.ok) {
+                                        throw new Error("HTTP error " + response.status);
+                                    }
+                                    return response.json();
+                                })
+                                .then(res => res.success ? res.data : null)
+                                .catch(err => {
+                                    if (!isUnloading) {
+                                        console.error("Failed to fetch new token:", err);
+                                    }
+                                    return null;
+                                });
+                        },
+                        onOpen: () => {
+                            if (targetNode.status !== 'paused') {
+                                targetNode.status = 'live';
+                                updateNodeStatus(targetNode);
+                            }
+                        },
+                        onClose: () => {
+                            if (!isUnloading) {
+                                targetNode.status = 'dead';
+                                updateNodeStatus(targetNode);
+                            }
+                        },
+                        onFailed: () => {
+                            if (!isUnloading) {
+                                targetNode.status = 'dead';
+                                updateNodeStatus(targetNode);
+                            }
+                        },
+                        onEstablished: () => {
+                            if (targetNode.status !== 'paused') {
+                                targetNode.status = 'live';
+                                updateNodeStatus(targetNode);
+                            }
+                            if (isGatewayMode) {
+                                refreshNodeList();
+                            }
+                        },
+                        onMessage: (response) => {
+                            if (isUnloading) return;
+                            if (response.error) {
+                                console.error("Received error message:", response.error);
+                                return;
+                            }
+                            const header = response.header;
+                            if (header === 'nodeJoined' || header === 'nodeLeft' || header === 'nodeStatusChanged') {
+                                if (response.node) updateNodeStatus(response.node);
+                            } else if (response.node) {
+                                updateNodeStatus(response.node);
+                            }
+                        }
+                    });
+                }
+
+                if (isDirectMode) {
+                    nodes.forEach(n => {
+                        const node = {
+                            id: n.id,
+                            port: n.port,
+                            status: n.status,
+                            endpoint: {
+                                path: contextPath + "/nodes/" + n.id,
+                                mode: (n.endpoint ? n.endpoint.mode : null)
+                            }
+                        };
+                        const client = createConsoleClient(node);
+                        clients.push(client);
+                        client.start('');
+                    });
+                } else {
+                    node.status = [[${page.node.status}]];
+                    node.endpoint.path = contextPath + "/nodes/" + node.id;
+                    const client = createConsoleClient(node);
+                    clients.push(client);
+                    client.start('');
+                }
+
+                function updateBulkConsoleState() {
+                    const action = $('input[name="bulkAction"]:checked').val();
+                    const isPauseResume = (action === 'pause' || action === 'resume');
+                    const $excludeConsole = $('#bulk-exclude-console');
+
+                    if (isPauseResume) {
+                        $excludeConsole.prop('checked', true).prop('disabled', true);
+                    } else {
+                        $excludeConsole.prop('disabled', false);
+                    }
+
+                    const exclude = $excludeConsole.is(':checked');
+
+                    $('.bulk-node-chk').each(function() {
+                        const isConsole = $(this).data('console') === true || $(this).data('console') === 'true';
+                        const $row = $(this).closest('.bulk-node-row');
+                        const $notice = $row.find('.console-notice');
+
+                        if (isConsole) {
+                            if (exclude || isPauseResume) {
+                                $(this).prop('checked', false).prop('disabled', true);
+                                $row.addClass('opacity-50');
+                                $notice.show();
+                            } else {
+                                $(this).prop('disabled', false);
+                                $row.removeClass('opacity-50');
+                                $notice.hide();
+                            }
+                        }
+                    });
+
+                    syncGroupCheckboxes();
+                }
+
+                function syncGroupCheckboxes() {
+                    $('.bulk-group-chk').each(function() {
+                        const groupKey = $(this).data('group');
+                        const $activeNodes = $(`.group-node-${groupKey}:not(:disabled)`);
+                        const $checkedNodes = $(`.group-node-${groupKey}:not(:disabled):checked`);
+                        if ($activeNodes.length > 0 && $activeNodes.length === $checkedNodes.length) {
+                            $(this).prop('checked', true);
+                        } else {
+                            $(this).prop('checked', false);
+                        }
+                    });
+                }
+
+                $('#bulk-select-all').on('click', function() {
+                    $('#bulk-node-list input.bulk-node-chk:not(:disabled)').prop('checked', true);
+                    syncGroupCheckboxes();
+                });
+
+                $('#bulk-deselect-all').on('click', function() {
+                    $('#bulk-node-list input[type="checkbox"]').prop('checked', false);
+                });
+
+                $('#bulk-exclude-console').on('change', function() {
+                    updateBulkConsoleState();
+                });
+
+                $('input[name="bulkAction"]').on('change', function() {
+                    updateBulkConsoleState();
+                });
+
+                $('#bulk-node-list').on('change', '.bulk-group-chk', function() {
+                    const groupKey = $(this).data('group');
+                    const isChecked = $(this).is(':checked');
+                    $(`.group-node-${groupKey}:not(:disabled)`).prop('checked', isChecked);
+                });
+
+                $('#bulk-node-list').on('change', '.bulk-node-chk', function() {
+                    syncGroupCheckboxes();
+                });
+
+                $('#bulkControlModal').on('show.bs.modal', function () {
+                    const $list = $('#bulk-node-list');
+                    $list.empty();
+                    
+                    if (!nodes || nodes.length === 0) {
+                        $list.html('<div class="text-muted small p-2">No nodes available.</div>');
+                        $('#bulk-exclude-console-wrapper').hide();
+                        return;
+                    }
+
+                    const hasConsoleNodes = nodes.some(n => n.console);
+                    $('#bulk-exclude-console-wrapper').toggle(hasConsoleNodes);
+
+                    const groups = {};
+                    nodes.forEach(n => {
+                        const g = n.group || 'Ungrouped';
+                        if (!groups[g]) groups[g] = [];
+                        groups[g].push(n);
+                    });
+
+                    Object.keys(groups).forEach(gName => {
+                        const safeGName = gName.replace(/[^a-zA-Z0-9]/g, '_');
+                        let gHtml = `<div class="mb-2">
+                            <div class="form-check fw-bold small text-primary ps-2 pe-2 py-1 bg-body rounded mb-1 border-bottom">
+                                <input class="form-check-input bulk-group-chk ms-0 me-2" type="checkbox" data-group="${safeGName}" id="chk-group-${safeGName}">
+                                <label class="form-check-label" for="chk-group-${safeGName}">
+                                    <i class="bi bi-folder2-open me-1"></i>${gName}
+                                </label>
+                            </div>
+                            <div class="ms-2">`;
+                        
+                        groups[gName].forEach(n => {
+                            const isConsole = Boolean(n.console);
+                            const status = (n.status || 'live').toLowerCase();
+                            let statusBadge = '';
+                            if (status === 'live') {
+                                statusBadge = '<span class="badge bg-success-subtle text-success border border-success-subtle ms-2">LIVE</span>';
+                            } else if (status === 'paused') {
+                                statusBadge = '<span class="badge bg-warning-subtle text-warning border border-warning-subtle ms-2">PAUSED</span>';
+                            } else if (status === 'dead') {
+                                statusBadge = '<span class="badge bg-danger-subtle text-danger border border-danger-subtle ms-2">DEAD</span>';
+                            } else {
+                                statusBadge = `<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle ms-2">${status.toUpperCase()}</span>`;
+                            }
+
+                            const consoleBadge = isConsole ? '<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1">Console</span>' : '';
+                            const consoleNotice = isConsole ? '<span class="console-notice text-muted ms-1 small" style="display:none;">(Not Applicable)</span>' : '';
+
+                            gHtml += `
+                                <div class="form-check text-start ps-4 py-1 bulk-node-row">
+                                    <input class="form-check-input bulk-node-chk group-node-${safeGName}" type="checkbox" name="bulkNodes" value="${n.id}" id="chk-${n.id}" data-console="${isConsole}">
+                                    <label class="form-check-label small" for="chk-${n.id}">
+                                        ${n.title ? n.title + ' (' + n.id + ')' : n.id}
+                                        ${consoleBadge}
+                                        ${statusBadge}
+                                        ${consoleNotice}
+                                    </label>
+                                </div>`;
+                        });
+
+                        gHtml += `</div></div>`;
+                        $list.append(gHtml);
+                    });
+
+                    updateBulkConsoleState();
+                });
+
+                $('#execute-bulk-btn').on('click', function() {
+                    if (isDemoUser) {
+                        alert("Bulk node actions are not allowed in the demo environment.");
+                        return;
+                    }
+
+                    const action = $('input[name="bulkAction"]:checked').val();
+                    const isPauseResume = (action === 'pause' || action === 'resume');
+
+                    const selectedNodes = [];
+                    const excludeConsole = $('#bulk-exclude-console').is(':checked');
+                    $('input[name="bulkNodes"]:checked').each(function() {
+                        const nodeId = $(this).val();
+                        const isConsole = $(this).data('console') === true || $(this).data('console') === 'true';
+                        if ((excludeConsole || isPauseResume) && isConsole) {
+                            return; // Safe guard: Skip console node when exclude console is checked or on pause/resume
+                        }
+                        selectedNodes.push(nodeId);
+                    });
+
+                    if (selectedNodes.length === 0) {
+                        alert('Please select at least one target node.');
+                        return;
+                    }
+
+                    const actionName = (action === 'restart-service' || action === 'restart' ? 'RESTART SERVICE' : (action === 'restart-server' ? 'RESTART SERVER' : action.toUpperCase()));
+
+                    if (!confirm(`Are you sure you want to execute '${actionName}' on ${selectedNodes.length} selected node(s)?`)) {
+                        return;
+                    }
+
+                    const $btn = $(this);
+                    $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1"></span>Executing...');
+
+                    const formData = new URLSearchParams();
+                    formData.append('action', action);
+                    selectedNodes.forEach(nid => formData.append('nodeIds', nid));
+
+                    fetch(contextPath + "/cluster/nodes/bulk-action", {
+                        method: 'POST',
+                        headers: {
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+                        },
+                        body: formData.toString()
+                    })
+                    .then(response => {
+                        if (response.status === 403) {
+                            throw new Error("Access Denied: You do not have permission to execute this bulk action.");
+                        }
+                        if (!response.ok) {
+                            throw new Error("HTTP error " + response.status);
+                        }
+                        return response.json();
+                    })
+                    .then(res => {
+                        $btn.prop('disabled', false).text('Execute Action');
+                        bootstrap.Modal.getInstance(document.getElementById('bulkControlModal')).hide();
+
+                        if (res.success && res.data) {
+                            const successNodes = res.data.successNodes || [];
+                            const failedNodes = res.data.failedNodes || [];
+
+                            successNodes.forEach(nodeId => {
+                                if (action === 'restart-service' || action === 'restart' || action === 'restart-server') {
+                                    updateNodeStatus({ id: nodeId, status: 'stopping' });
+                                    if (action === 'restart-server') {
+                                        pollNodeRecovery(nodeId);
+                                    }
+                                } else if (action === 'pause') {
+                                    updateNodeStatus({ id: nodeId, status: 'paused' });
+                                } else if (action === 'resume') {
+                                    updateNodeStatus({ id: nodeId, status: 'live' });
+                                }
+                            });
+
+                            if (failedNodes.length === 0) {
+                                alert(`Successfully dispatched '${actionName}' command to all ${successNodes.length} node(s).`);
+                            } else {
+                                const failedDetails = failedNodes.map(r => `${r.nodeId}: ${r.error || 'Failed'}`).join('\n');
+                                alert(`Dispatched '${actionName}' command to ${successNodes.length} node(s). ${failedNodes.length} node(s) failed:\n` + failedDetails);
+                            }
+                        } else {
+                            alert("Failed to execute bulk action: " + (res.error ? res.error.message : "Unknown error"));
+                        }
+                    })
+                    .catch(err => {
+                        $btn.prop('disabled', false).text('Execute Action');
+                        console.error("Error executing bulk action:", err);
+                        alert(err.message || "Error communicating with the server.");
+                    });
+                });
+            });
+        </script>
+    </th:block>
+</body>
+</html>

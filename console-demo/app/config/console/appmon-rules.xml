@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE aspectran PUBLIC "-//ASPECTRAN//DTD Aspectran 9.0//EN"
+        "https://aspectran.com/dtd/aspectran-9.dtd">
+<aspectran>
+
+    <bean class="com.aspectran.aspectow.appmon.engine.config.AppMonConfigResolver">
+        <!-- Netty (Default) -->
+        <properties profile="(!prod, !undertow)">
+            <item name="configLocation">/config/console/appmon-config.apon</item>
+        </properties>
+        <properties profile="(prod, !undertow)">
+            <item name="configLocation">/config/console/appmon-config-prod.apon</item>
+        </properties>
+
+        <!-- Undertow -->
+        <properties profile="(!prod, undertow)">
+            <item name="configLocation">/config/console/appmon-config-undertow.apon</item>
+        </properties>
+        <properties profile="(prod, undertow)">
+            <item name="configLocation">/config/console/appmon-config-undertow-prod.apon</item>
+        </properties>
+    </bean>
+
+    <bean class="com.aspectran.aspectow.appmon.common.support.MaxMindIPCountryResolver">
+        <properties profile="dev">
+            <item name="databasePath">#{basePath}/config/console/mmdb/GeoIP2-Country-Test.mmdb</item>
+        </properties>
+    </bean>
+
+</aspectran>

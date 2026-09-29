@@ -1,0 +1,1702 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="https://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      layout:decorate="~{templates/default}">
+<head>
+    <style>
+        .build-container {
+            display: grid;
+            grid-template-columns: 420px 1fr;
+            gap: 1rem;
+            height: calc(100vh - 320px);
+            min-height: 650px;
+        }
+        .control-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            overflow-y: auto;
+        }
+        .terminal-panel {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            height: 100%;
+            min-height: 550px;
+        }
+        .terminal-header {
+            background: #222;
+            padding: 8px 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+            border-bottom: 1px solid #333;
+            flex-shrink: 0;
+        }
+        .terminal-body {
+            flex: 1 1 0;
+            min-height: 0;
+            overflow-y: auto;
+            font-family: var(--bs-font-monospace);
+            font-size: 0.8rem;
+            padding: 0.6rem;
+            color: #d4d4d4;
+            background: #181818;
+            white-space: pre-wrap;
+            word-break: break-all;
+            line-height: 1.45;
+        }
+        .terminal-body .text-muted {
+            color: #8c8c8c !important;
+        }
+        .terminal-line {
+            white-space: pre;
+            margin-bottom: 2px;
+        }
+        .terminal-line.info { color: #58a6ff; }
+        .terminal-line.success { color: #3fb950; font-weight: bold; }
+        .terminal-line.error { color: #f85149; font-weight: bold; }
+        .terminal-line.warn { color: #d29922; }
+        .quick-actions {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .info-card {
+            background: var(--bs-tertiary-bg);
+            border: 1px solid var(--bs-border-color);
+            padding: 1rem;
+        }
+        .info-card.metadata {
+            background: var(--bs-body-bg);
+        }
+        .meta-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.82rem;
+            margin-bottom: 6px;
+        }
+        .meta-label {
+            color: var(--bs-secondary-color);
+        }
+        .meta-value {
+            font-weight: 600;
+            font-family: monospace;
+        }
+
+        .node-tabs-bar {
+            display: flex;
+            align-items: center;
+            background: #1c1c1c;
+            border-bottom: 1px solid #333;
+            padding: 4px 6px 0 6px;
+            gap: 4px;
+            overflow-x: auto;
+            flex-shrink: 0;
+        }
+        .node-tab {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 12px;
+            background: #262626;
+            color: #8b949e;
+            border: 1px solid #333;
+            border-bottom: none;
+            border-radius: 6px 6px 0 0;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 600;
+            transition: all 0.15s ease;
+            user-select: none;
+            white-space: nowrap;
+        }
+        .node-tab:hover {
+            background: #303030;
+            color: #e6edf3;
+        }
+        .node-tab.active {
+            background: #181818;
+            color: #58a6ff;
+            border-color: #444 #444 #181818 #444;
+            font-weight: 700;
+        }
+        .node-summary-card {
+            border: 1px solid var(--bs-border-color);
+            border-radius: 8px;
+            padding: 8px 12px;
+            background: var(--bs-secondary-bg);
+            cursor: pointer;
+            transition: border-color 0.15s;
+        }
+        .node-summary-card:hover {
+            border-color: var(--bs-primary);
+        }
+        .node-summary-card.active {
+            border-color: var(--bs-primary);
+            background: var(--bs-primary-bg-subtle);
+        }
+        .node-tag {
+            display: inline-block;
+            padding: 1px 6px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            border-radius: 4px;
+            background: #2d333b;
+            color: #58a6ff;
+            border: 1px solid #444c56;
+        }
+
+        /* Mobile & Tablet Responsive Layout */
+        @media (max-width: 992px) {
+            .build-container {
+                grid-template-columns: 1fr;
+                height: auto;
+                min-height: auto;
+                gap: 15px;
+            }
+            .control-panel {
+                overflow-y: visible;
+            }
+            .terminal-panel {
+                height: 500px;
+                min-height: 380px;
+            }
+            .quick-actions .btn-outline-danger {
+                margin-left: 0 !important;
+            }
+        }
+        @media (max-width: 768px) {
+            .quick-actions {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 6px;
+            }
+            .quick-actions .quick-label {
+                align-self: flex-start;
+                margin-bottom: 2px;
+            }
+            .quick-actions button {
+                width: 100%;
+            }
+        }
+        @media (max-width: 576px) {
+            .terminal-header {
+                padding: 6px 10px;
+                gap: 6px;
+            }
+            .terminal-header .terminal-title {
+                font-size: 0.8rem;
+            }
+            .terminal-header .btn-xs {
+                padding: 2px 6px;
+                font-size: 0.75rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <th:block layout:fragment="content">
+        <th:block th:if="${session.USER_INFO.hasPermission('BUILD_VIEW') || session.USER_INFO.hasPermission('BUILD_EXECUTE') || session.USER_INFO.hasRole('SUPER_ADMIN')}">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-start gap-3 mb-3">
+                <div>
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <h3 class="fw-bold mb-0">Build &amp; Deployment</h3>
+                    </div>
+                    <p class="text-muted mb-0">Remote build script execution and automated continuous delivery</p>
+                </div>
+                <div class="d-flex flex-column align-items-end justify-content-end gap-2">
+                    <div class="d-flex flex-nowrap align-items-center gap-2">
+                        <span class="text-muted text-nowrap small">Cluster Mode:</span>
+                        <span class="fw-bold text-primary" th:text="${page.clusterMode.toUpperCase()}">GATEWAY</span>
+                    </div>
+                    <div class="d-flex flex-wrap flex-sm-nowrap justify-content-end align-items-center gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap" onclick="openNodesPopup()">
+                            <i class="bi bi-hdd-network me-1"></i> Manage Nodes
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap" onclick="openAuditPopup()">
+                            <i class="bi bi-clock-history me-1"></i> Audit Trail
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card target-selector">
+                <div class="row align-items-center gy-1">
+                    <div class="col-auto">
+                        <label class="fw-bold small text-muted text-uppercase">Target Node</label>
+                    </div>
+                    <div class="col-md-3">
+                        <select id="target-type" class="form-select form-select-sm" onchange="onTargetTypeChange()">
+                            <option value="services" th:selected="${page.targetNodeId == null}">All Service Nodes</option>
+                            <option value="all">All Nodes in Cluster</option>
+                            <option value="group">Specific Group</option>
+                            <option value="node" th:selected="${page.targetNodeId != null}">Individual Node</option>
+                        </select>
+                    </div>
+                    <div class="col-md-5" id="target-value-container">
+                        <div class="d-flex align-items-center gap-2">
+                            <select id="target-value" class="form-select form-select-sm" onchange="onTargetValueChange()">
+                                <!-- Dynamic options -->
+                            </select>
+                            <span id="target-warning-badge" class="badge bg-danger-subtle text-danger text-nowrap d-none" title="This node is offline or historical and cannot execute builds">
+                                <i class="bi bi-exclamation-triangle-fill me-1"></i>Offline
+                            </span>
+                        </div>
+                    </div>
+                    <div class="col text-end">
+                        <span id="connection-indicator" class="badge status-pill bg-secondary">CONNECTING...</span>
+                    </div>
+                </div>
+
+                <!-- Quick Action Bar -->
+                <div class="quick-actions border-top pt-2 mt-3" th:if="${session.USER_INFO.hasPermission('BUILD_EXECUTE') || session.USER_INFO.hasRole('SUPER_ADMIN') || session.USER_INFO.hasRole('DEMO')}">
+                    <span class="quick-label small text-muted me-2"><i class="bi bi-lightning-charge-fill text-warning"></i> Quick:</span>
+                    <button class="btn btn-sm btn-primary" onclick="quickRun('5-pull_build_deploy.sh')">
+                        <i class="bi bi-play-fill"></i> Full Build &amp; Deploy
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary" onclick="quickRun('1-pull.sh')">
+                        <i class="bi bi-cloud-arrow-down"></i> 1. Pull
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary" onclick="quickRun('2-build.sh')">
+                        <i class="bi bi-gear"></i> 2. Maven Build
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary" onclick="quickRun('3-deploy_config.sh')">
+                        <i class="bi bi-sliders"></i> 3. Config Deploy
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary" onclick="quickRun('4-deploy_webapps.sh')">
+                        <i class="bi bi-window"></i> 4. Webapps Deploy
+                    </button>
+                </div>
+            </div>
+
+            <div class="build-container">
+                <!-- Left: Control & Metadata Panel -->
+                <div class="control-panel">
+                    <div class="card info-card">
+                        <h6 class="fw-bold mb-3"><i class="bi bi-terminal me-1"></i> Script Execution</h6>
+                        
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold text-muted">Execution Action / Script</label>
+                            <select id="script-selector" class="form-select form-select-sm" onchange="onScriptChange()">
+                                <optgroup label="🚀 Standard Deploy (Recommended)">
+                                    <option value="5-pull_build_deploy.sh" selected>Full Build &amp; Deploy (Git Pull + Build + Deploy All)</option>
+                                    <option value="6-pull_deploy.sh">Fast Deploy (Git Pull + Deploy, No Rebuild)</option>
+                                </optgroup>
+                                <optgroup label="⚙️ Single Step (Pipeline Execution)">
+                                    <option value="1-pull.sh">1. Git Pull Only (Fetch Source)</option>
+                                    <option value="2-build.sh">2. Maven Build Only (Compile &amp; Package)</option>
+                                    <option value="3-deploy_config.sh">3. Deploy Config Only</option>
+                                    <option value="4-deploy_webapps.sh">4. Deploy Webapps Only</option>
+                                </optgroup>
+                                <optgroup label="🛠️ Selective Deploy (Advanced)">
+                                    <option value="7-pull_deploy_config_only.sh">Pull &amp; Deploy Config Only</option>
+                                    <option value="8-pull_deploy_webapps_only.sh">Pull &amp; Deploy Webapps Only</option>
+                                    <option value="9-pull_deploy_config_webapps_only.sh">Pull &amp; Deploy Config &amp; Webapps</option>
+                                </optgroup>
+                            </select>
+                        </div>
+
+                        <!-- Pipeline Flow Preview Card -->
+                        <div id="pipeline-preview" class="card p-2 mb-3" style="display: none;"></div>
+
+                        <div>
+                            <label class="form-label small fw-bold text-muted">Git Branch / Tag (Optional)</label>
+                            <input type="text" id="param-branch" class="form-control form-control-sm" placeholder="e.g. main, release/v1.0">
+                        </div>
+
+                        <div class="d-grid gap-2 mt-3">
+                            <button id="btn-dispatch" class="btn btn-primary" onclick="dispatchBuild()"
+                                    th:disabled="${!session.USER_INFO.hasPermission('BUILD_EXECUTE') and !session.USER_INFO.hasRole('SUPER_ADMIN') and !session.USER_INFO.hasRole('DEMO')}">
+                                <i class="bi bi-play-circle-fill me-1"></i> Execute Script
+                            </button>
+                            <button id="btn-cancel" class="btn btn-outline-danger" onclick="cancelBuild()" disabled>
+                                <i class="bi bi-stop-circle-fill me-1"></i> Abort / Cancel
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Execution Status Summary Card -->
+                    <div class="card info-card metadata flex-grow-1">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h6 class="fw-bold mb-0"><i class="bi bi-info-circle me-1"></i> <span id="meta-view-title">Current Execution</span></h6>
+                            <span id="exec-status-badge" class="badge status-pill bg-secondary">IDLE</span>
+                        </div>
+
+                        <!-- Single Node Detailed View -->
+                        <div id="meta-single-view">
+                            <div class="meta-row">
+                                <span class="meta-label">Execution ID:</span>
+                                <span id="meta-exec-id" class="meta-value text-truncate" style="max-width: 180px;">-</span>
+                            </div>
+                            <div class="meta-row">
+                                <span class="meta-label">Target Node:</span>
+                                <span id="meta-node-id" class="meta-value">-</span>
+                            </div>
+                            <div class="meta-row">
+                                <span class="meta-label">Git Branch:</span>
+                                <span id="meta-branch" class="meta-value">-</span>
+                            </div>
+                            <div class="meta-row">
+                                <span class="meta-label">Before Commit:</span>
+                                <span id="meta-commit-before" class="meta-value">-</span>
+                            </div>
+                            <div class="meta-row">
+                                <span class="meta-label">After Commit:</span>
+                                <span id="meta-commit-after" class="meta-value">-</span>
+                            </div>
+                            <div class="meta-row">
+                                <span class="meta-label">Started At:</span>
+                                <span id="meta-started-at" class="meta-value">-</span>
+                            </div>
+                            <div class="meta-row">
+                                <span class="meta-label">Duration:</span>
+                                <span id="meta-duration" class="meta-value">-</span>
+                            </div>
+                            <div class="meta-row">
+                                <span class="meta-label">Exit Code:</span>
+                                <span id="meta-exit-code" class="meta-value">-</span>
+                            </div>
+                        </div>
+
+                        <!-- All Nodes Summary List View -->
+                        <div id="meta-all-view" style="display: none;">
+                            <div class="small text-muted mb-2">Click any node below or use tabs above to view specific output:</div>
+                            <div id="meta-nodes-list" class="d-flex flex-column gap-2"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right: Real-time Terminal Panel -->
+                <div class="card terminal-panel">
+                    <!-- Top: Dynamic Node Tabs Bar -->
+                    <div class="node-tabs-bar" id="node-tabs-bar">
+                        <!-- Populated dynamically via JS -->
+                    </div>
+
+                    <div class="terminal-header">
+                        <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                            <span id="active-tab-title" class="text-white small fw-bold terminal-title"><i class="bi bi-terminal-fill me-1 text-primary"></i> Live Output Console</span>
+                            <span id="terminal-spinner" class="spinner-border spinner-border-sm text-primary d-none" role="status"></span>
+                        </div>
+                        <div class="d-flex align-items-center gap-1 gap-sm-2 flex-wrap ms-auto">
+                            <div class="dropdown">
+                                <button class="btn btn-xs btn-outline-secondary text-white-50 dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="View Daemon Logs">
+                                    <i class="bi bi-file-earmark-text me-sm-1"></i><span class="d-none d-sm-inline">Daemon Logs</span>
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end dropdown-menu-dark shadow-sm">
+                                    <li><a class="dropdown-item small" href="javascript:void(0)" onclick="fetchDaemonLog('stderr')"><i class="bi bi-exclamation-triangle text-danger me-2"></i>daemon-stderr.log</a></li>
+                                    <li><a class="dropdown-item small" href="javascript:void(0)" onclick="fetchDaemonLog('stdout')"><i class="bi bi-file-text text-info me-2"></i>daemon-stdout.log</a></li>
+                                </ul>
+                            </div>
+                            <div class="form-check form-switch form-check-inline m-0 text-white small d-flex align-items-center gap-1 ps-4 pe-1">
+                                <input class="form-check-input ms-0 me-1" type="checkbox" id="auto-scroll" checked title="Toggle Auto-scroll">
+                                <label class="form-check-label d-none d-md-inline" for="auto-scroll">Auto-scroll</label>
+                            </div>
+                            <button class="btn btn-xs btn-outline-secondary text-white-50" onclick="clearTerminal()" title="Clear Current Tab Terminal">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                            <button class="btn btn-xs btn-outline-secondary text-white-50" onclick="downloadLogs()" title="Download Current Tab Logs">
+                                <i class="bi bi-download"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div id="terminal-body" class="terminal-body"><div class="text-muted fst-italic">Select a script and click 'Execute Script' to start real-time build &amp; deploy output stream...</div></div>
+                </div>
+            </div>
+        </th:block>
+        <div th:unless="${session.USER_INFO.hasPermission('BUILD_VIEW') || session.USER_INFO.hasPermission('BUILD_EXECUTE') || session.USER_INFO.hasRole('SUPER_ADMIN')}" class="alert alert-danger my-4">
+            <h4 class="alert-heading"><i class="bi bi-exclamation-triangle-fill"></i> Access Denied</h4>
+            <p class="mb-0">You do not have permission to access this page.</p>
+        </div>
+    </th:block>
+
+    <th:block layout:fragment="script">
+        <script th:inline="javascript">
+            const contextPath = [[@{/}]].replace(/\/$/, '');
+            let nodes = [[${page.nodes}]];
+            const currentNodeId = [[${page.targetNodeId}]];
+            const myNodeId = [[${page.myNodeId}]];
+            const initialLastExecution = /*[[${page.lastExecution}]]*/ null;
+            const initialLastExecutions = /*[[${page.lastExecutions}]]*/ null;
+            const targetExecutionId = /*[[${page.targetExecutionId}]]*/ null;
+            const canExecute = /*[[${session.USER_INFO.hasPermission('BUILD_EXECUTE') || session.USER_INFO.hasRole('SUPER_ADMIN')}]]*/ false;
+            const isDemoUser = /*[[${session.USER_INFO.hasRole('DEMO')}]]*/ false;
+        </script>
+        <script>
+            let client = null;
+            let currentExecutionId = null;
+            let activeTab = '__all__';
+            let activeTargetNodes = [];
+            let nodeExecutions = {};
+            let allLogs = [];
+            let selectedNodeId = currentNodeId || myNodeId || (nodes && nodes[0] ? nodes[0].id : null);
+            let selectedGroupId = null;
+
+            function ensureNode(nodeId) {
+                if (!nodeId) nodeId = 'unknown';
+                if (!nodeExecutions[nodeId]) {
+                    nodeExecutions[nodeId] = {
+                        nodeId: nodeId,
+                        executionId: null,
+                        status: 'IDLE',
+                        gitBranch: '-',
+                        gitCommitBefore: '-',
+                        gitCommitAfter: '-',
+                        startedAt: null,
+                        durationMs: null,
+                        exitCode: null,
+                        error: null,
+                        logs: []
+                    };
+                }
+                return nodeExecutions[nodeId];
+            }
+
+            function refreshNodeList() {
+                return fetch(contextPath + "/cluster/build/list")
+                    .then(res => res.json())
+                    .then(res => {
+                        nodes = res.data || [];
+                        return nodes;
+                    });
+            }
+
+            function onTargetTypeChange(forceCheck = false) {
+                if (forceCheck) {
+                    refreshNodeList().then(() => doTargetTypeChange());
+                } else {
+                    doTargetTypeChange();
+                }
+            }
+
+            function isTargetExecutable() {
+                const type = $('#target-type').val();
+                const val = $('#target-value').val();
+
+                if (type === 'node') {
+                    const targetId = val || selectedNodeId || currentNodeId || myNodeId;
+                    if (!targetId) {
+                        return { executable: false, reason: 'No target node selected.' };
+                    }
+                    const matchedNode = (nodes || []).find(n => n.id === targetId);
+                    if (!matchedNode) {
+                        return { executable: false, reason: `Node '${targetId}' is offline or does not exist in the cluster.` };
+                    }
+                    if (matchedNode.status && matchedNode.status.toUpperCase() === 'DEAD') {
+                        return { executable: false, reason: `Node '${targetId}' is currently offline (DEAD).` };
+                    }
+                    return { executable: true, targetId: targetId };
+                } else if (type === 'services') {
+                    const serviceNodes = (nodes || []).filter(n => !n.console && (!n.status || n.status.toUpperCase() !== 'DEAD'));
+                    if (serviceNodes.length === 0) {
+                        return { executable: false, reason: 'No active service nodes found in the cluster.' };
+                    }
+                    return { executable: true };
+                } else if (type === 'all') {
+                    const liveNodes = (nodes || []).filter(n => !n.status || n.status.toUpperCase() !== 'DEAD');
+                    if (liveNodes.length === 0) {
+                        return { executable: false, reason: 'No active nodes found in the cluster.' };
+                    }
+                    return { executable: true };
+                } else if (type === 'group') {
+                    if (!val) {
+                        return { executable: false, reason: 'No node group selected.' };
+                    }
+                    const groupNodes = (nodes || []).filter(n => n.group === val && (!n.status || n.status.toUpperCase() !== 'DEAD'));
+                    if (groupNodes.length === 0) {
+                        return { executable: false, reason: `No active nodes found in group '${val}'.` };
+                    }
+                    return { executable: true };
+                }
+                return { executable: true };
+            }
+
+            function updateTargetWarningBadge() {
+                const targetCheck = isTargetExecutable();
+                const $badge = $('#target-warning-badge');
+                if (!targetCheck.executable) {
+                    $badge.removeClass('d-none').attr('title', targetCheck.reason);
+                } else {
+                    $badge.addClass('d-none').removeAttr('title');
+                }
+            }
+
+            function onTargetValueChange() {
+                const type = $('#target-type').val();
+                const $select = $('#target-value');
+                const val = $select.val();
+
+                if (type === 'node') {
+                    selectedNodeId = val;
+                    if (val) {
+                        updateUrl(val);
+                    } else {
+                        updateUrl(null);
+                    }
+                } else if (type === 'group') {
+                    selectedGroupId = val;
+                    updateUrl(null);
+                }
+                updateTargetWarningBadge();
+                checkOverallExecutionStatus();
+            }
+
+            function doTargetTypeChange() {
+                const type = $('#target-type').val();
+                const $container = $('#target-value-container');
+                const $select = $('#target-value');
+                $select.empty();
+
+                if (type === 'services') {
+                    $container.hide();
+                    updateUrl(null);
+                } else if (type === 'all') {
+                    $container.hide();
+                    updateUrl(null);
+                } else if (type === 'group') {
+                    $container.show();
+                    updateUrl(null);
+                    const groups = [...new Set(nodes.map(n => n.group).filter(g => g))];
+                    groups.forEach(g => $select.append(new Option(g, g)));
+                    if (selectedGroupId && groups.includes(selectedGroupId)) {
+                        $select.val(selectedGroupId);
+                    } else if (groups.length > 0) {
+                        selectedGroupId = groups[0];
+                        $select.val(selectedGroupId);
+                    }
+                } else {
+                    $container.show();
+                    let targetFound = false;
+                    const targetNodeId = selectedNodeId || currentNodeId || myNodeId || (nodes[0] ? nodes[0].id : '');
+                    nodes.forEach(n => {
+                        let label = n.title + ' (' + n.id + ')';
+                        if (n.console) {
+                            label += ' [Console]';
+                        }
+                        if (n.status && n.status.toUpperCase() === 'DEAD') {
+                            label += ' [DEAD]';
+                        }
+                        const option = new Option(label, n.id);
+                        if (n.status && n.status.toUpperCase() === 'DEAD') {
+                            $(option).addClass('text-danger');
+                        }
+                        $select.append(option);
+                        if (n.id === targetNodeId) {
+                            targetFound = true;
+                        }
+                    });
+
+                    if (targetNodeId) {
+                        if (!targetFound && targetNodeId !== myNodeId) {
+                            const option = new Option(targetNodeId + ' [Offline / History]', targetNodeId);
+                            $(option).addClass('text-danger fst-italic');
+                            $select.append(option);
+                        }
+                        $select.val(targetNodeId);
+                        selectedNodeId = targetNodeId;
+                        updateUrl(targetNodeId);
+                    }
+                }
+                updateTargetWarningBadge();
+                checkOverallExecutionStatus();
+            }
+
+            function updateUrl(nodeId) {
+                const url = new URL(window.location);
+                if (nodeId) {
+                    url.searchParams.set('nodeId', nodeId);
+                } else {
+                    url.searchParams.delete('nodeId');
+                }
+                window.history.replaceState({}, '', url);
+            }
+
+            function openNodesPopup(e) {
+                if (e) e.preventDefault();
+                const width = Math.min(1500, window.screen.width * 0.9);
+                const height = Math.min(950, window.screen.height * 0.85);
+                const left = (window.screen.width - width) / 2;
+                const top = (window.screen.height - height) / 2;
+                const popup = window.open(
+                    contextPath + '/cluster/nodes/popup/',
+                    'clusterNodesPopup',
+                    `width=${width},height=${height},top=${top},left=${left},scrollbars=yes,resizable=yes`
+                );
+                if (popup) {
+                    popup.focus();
+                }
+            }
+
+            function openAuditPopup(e) {
+                if (e) e.preventDefault();
+                const width = Math.min(1450, window.screen.width * 0.9);
+                const height = Math.min(950, window.screen.height * 0.85);
+                const left = (window.screen.width - width) / 2;
+                const top = (window.screen.height - height) / 2;
+                const popup = window.open(
+                    contextPath + '/cluster/build/audit/',
+                    'buildAuditTrailPopup',
+                    `width=${width},height=${height},top=${top},left=${left},scrollbars=yes,resizable=yes`
+                );
+                if (popup) {
+                    popup.focus();
+                }
+            }
+
+            const scriptPipelineMap = {
+                '5-pull_build_deploy.sh': {
+                    title: 'Full Build & Deploy',
+                    desc: 'Fetch latest commits from Git, execute Maven compile & package, and deploy config/webapps.',
+                    steps: [
+                        { icon: 'bi-cloud-arrow-down-fill', name: '1. Git Pull' },
+                        { icon: 'bi-gear-fill', name: '2. Maven Build' },
+                        { icon: 'bi-sliders', name: '3. Config Deploy' },
+                        { icon: 'bi-window-desktop', name: '4. Webapps Deploy' }
+                    ]
+                },
+                '6-pull_deploy.sh': {
+                    title: 'Fast Deploy (No Rebuild)',
+                    desc: 'Fetch latest source from Git and deploy directly without Maven compile step.',
+                    steps: [
+                        { icon: 'bi-cloud-arrow-down-fill', name: '1. Git Pull' },
+                        { icon: 'bi-sliders', name: '3. Config Deploy' },
+                        { icon: 'bi-window-desktop', name: '4. Webapps Deploy' }
+                    ]
+                },
+                '1-pull.sh': {
+                    title: 'Git Pull Only',
+                    desc: 'Pull latest commits and revisions from target Git remote repository.',
+                    steps: [
+                        { icon: 'bi-cloud-arrow-down-fill', name: '1. Git Pull' }
+                    ]
+                },
+                '2-build.sh': {
+                    title: 'Maven Build Only',
+                    desc: 'Compile source files and build deployment artifacts using Maven.',
+                    steps: [
+                        { icon: 'bi-gear-fill', name: '2. Maven Build' }
+                    ]
+                },
+                '3-deploy_config.sh': {
+                    title: 'Deploy Config Only',
+                    desc: 'Deploy updated configuration files to target node app/config directory.',
+                    steps: [
+                        { icon: 'bi-sliders', name: '3. Config Deploy' }
+                    ]
+                },
+                '4-deploy_webapps.sh': {
+                    title: 'Deploy Webapps Only',
+                    desc: 'Deploy web applications and static assets to app/webapps directory.',
+                    steps: [
+                        { icon: 'bi-window-desktop', name: '4. Webapps Deploy' }
+                    ]
+                },
+                '7-pull_deploy_config_only.sh': {
+                    title: 'Pull & Deploy Config Only',
+                    desc: 'Fetch latest changes and deploy configuration files only.',
+                    steps: [
+                        { icon: 'bi-cloud-arrow-down-fill', name: '1. Git Pull' },
+                        { icon: 'bi-sliders', name: '3. Config Deploy' }
+                    ]
+                },
+                '8-pull_deploy_webapps_only.sh': {
+                    title: 'Pull & Deploy Webapps Only',
+                    desc: 'Fetch latest changes and deploy web application assets only.',
+                    steps: [
+                        { icon: 'bi-cloud-arrow-down-fill', name: '1. Git Pull' },
+                        { icon: 'bi-window-desktop', name: '4. Webapps Deploy' }
+                    ]
+                },
+                '9-pull_deploy_config_webapps_only.sh': {
+                    title: 'Pull & Deploy Config + Webapps',
+                    desc: 'Fetch latest changes and deploy both configs and webapps (without build).',
+                    steps: [
+                        { icon: 'bi-cloud-arrow-down-fill', name: '1. Git Pull' },
+                        { icon: 'bi-sliders', name: '3. Config Deploy' },
+                        { icon: 'bi-window-desktop', name: '4. Webapps Deploy' }
+                    ]
+                }
+            };
+
+            function onScriptChange() {
+                const script = $('#script-selector').val();
+                const info = scriptPipelineMap[script];
+                const $preview = $('#pipeline-preview');
+                if (!info) {
+                    $preview.empty().hide();
+                    return;
+                }
+
+                const stepsHtml = info.steps.map(s => `
+                    <span class="badge bg-secondary-subtle text-body border px-2 py-1">
+                        <i class="bi ${s.icon} me-1 text-primary"></i>${s.name}
+                    </span>
+                `).join('<i class="bi bi-arrow-right text-muted small mx-1"></i>');
+
+                $preview.html(`
+                    <div class="d-flex align-items-center justify-content-between mb-1">
+                        <span class="fw-bold small text-primary"><i class="bi bi-diagram-3-fill me-1"></i>Pipeline Flow</span>
+                        <code class="small text-muted">${script}</code>
+                    </div>
+                    <div class="d-flex flex-wrap align-items-center my-2 lh-lg">
+                        ${stepsHtml}
+                    </div>
+                    <div class="text-muted" style="font-size: 0.76rem;">${info.desc}</div>
+                `).show();
+            }
+
+            let healthCheckTimer = null;
+            let healthCheckStartTimeout = null;
+            let lastHandledErrorKey = null;
+            let executionStartTime = null;
+            let durationTicker = null;
+
+            function startDurationTicker() {
+                if (durationTicker) {
+                    clearInterval(durationTicker);
+                }
+                executionStartTime = Date.now();
+                $('#meta-duration').text('0.0s');
+                durationTicker = setInterval(() => {
+                    if (executionStartTime) {
+                        const elapsed = ((Date.now() - executionStartTime) / 1000).toFixed(1);
+                        $('#meta-duration').text(elapsed + 's');
+                    }
+                }, 100);
+            }
+
+            function stopDurationTicker(finalDurationMs) {
+                if (durationTicker) {
+                    clearInterval(durationTicker);
+                    durationTicker = null;
+                }
+                if (finalDurationMs !== undefined && finalDurationMs !== null && finalDurationMs > 0) {
+                    $('#meta-duration').text((finalDurationMs / 1000).toFixed(1) + 's');
+                } else if (executionStartTime) {
+                    const elapsed = ((Date.now() - executionStartTime) / 1000).toFixed(1);
+                    $('#meta-duration').text(elapsed + 's');
+                }
+            }
+
+            /* --- Tab & View Management --- */
+
+            function initTabs() {
+                const $bar = $('#node-tabs-bar');
+                $bar.empty();
+
+                const nodeIds = activeTargetNodes.length > 0 ? activeTargetNodes : (nodes.map(n => n.id));
+                const isMulti = nodeIds.length > 1;
+
+                if (isMulti) {
+                    $bar.append(`
+                        <div class="node-tab ${activeTab === '__all__' ? 'active' : ''}" onclick="selectTab('__all__')">
+                            <i class="bi bi-globe2 me-1"></i>All Nodes
+                        </div>
+                    `);
+                } else if (activeTab === '__all__' && nodeIds.length === 1) {
+                    activeTab = nodeIds[0];
+                }
+
+                nodeIds.forEach(nid => {
+                    const exec = nodeExecutions[nid];
+                    const status = exec ? exec.status : 'IDLE';
+                    const badgeClass = getBadgeClass(status);
+                    $bar.append(`
+                        <div id="tab-${nid}" class="node-tab ${activeTab === nid ? 'active' : ''}" onclick="selectTab('${nid}')">
+                            <i class="bi bi-hdd-network me-1"></i>${nid}
+                            <span id="tab-badge-${nid}" class="badge status-pill small ${badgeClass}">${status}</span>
+                        </div>
+                    `);
+                });
+
+                if (isMulti && activeTab !== '__all__' && !nodeIds.includes(activeTab)) {
+                    activeTab = '__all__';
+                }
+
+                renderActiveTab();
+            }
+
+            function selectTab(tabId) {
+                activeTab = tabId;
+                $('.node-tab').removeClass('active');
+                if (tabId === '__all__') {
+                    $('.node-tab:first-child').addClass('active');
+                } else {
+                    $(`#tab-${tabId}`).addClass('active');
+                }
+                renderActiveTab();
+            }
+
+            function getBadgeClass(status) {
+                switch (status) {
+                    case 'RUNNING': return 'bg-primary';
+                    case 'PENDING': return 'bg-warning';
+                    case 'SUCCESS': return 'bg-success';
+                    case 'FAILED':
+                    case 'TIMEOUT': return 'bg-danger';
+                    case 'CANCELLED': return 'bg-warning';
+                    default: return 'bg-secondary';
+                }
+            }
+
+            function renderActiveTab() {
+                // Update terminal title
+                if (activeTab === '__all__') {
+                    $('#active-tab-title').html('<i class="bi bi-globe2 me-1 text-primary"></i> All Nodes Live Output');
+                } else {
+                    $('#active-tab-title').html(`<i class="bi bi-hdd-network-fill me-1 text-primary"></i> Node <code>${activeTab}</code> Live Output`);
+                }
+
+                // Render terminal content
+                const $body = $('#terminal-body');
+                $body.empty();
+
+                if (activeTab === '__all__') {
+                    if (allLogs.length === 0) {
+                        $body.html('<div class="text-muted fst-italic">Waiting for output stream...</div>');
+                    } else {
+                        allLogs.forEach(item => appendLineToDOM($body, item.text, item.type, item.nodeId));
+                    }
+                } else {
+                    const exec = nodeExecutions[activeTab];
+                    const logs = exec ? exec.logs : [];
+                    if (logs.length === 0) {
+                        $body.html('<div class="text-muted fst-italic">Waiting for output stream...</div>');
+                    } else {
+                        logs.forEach(item => appendLineToDOM($body, item.text, item.type, null));
+                    }
+                }
+
+                if ($('#auto-scroll').is(':checked')) {
+                    $body.scrollTop($body[0].scrollHeight);
+                }
+
+                // Render left metadata view
+                renderMetaView();
+            }
+
+            function renderMetaView() {
+                if (activeTab === '__all__') {
+                    $('#meta-view-title').text('Cluster Execution Summary');
+                    $('#meta-single-view').hide();
+                    $('#meta-all-view').show();
+
+                    const $list = $('#meta-nodes-list');
+                    $list.empty();
+
+                    const nodeIds = activeTargetNodes.length > 0 ? activeTargetNodes : Object.keys(nodeExecutions);
+                    let overallStatus = 'IDLE';
+                    let hasRunning = false;
+                    let hasFailed = false;
+                    let hasCancelled = false;
+                    let allSuccess = (nodeIds.length > 0);
+
+                    nodeIds.forEach(nid => {
+                        const exec = nodeExecutions[nid] || { status: 'IDLE', durationMs: null, exitCode: null };
+                        const st = exec.status || 'IDLE';
+                        if (st === 'RUNNING' || st === 'PENDING') hasRunning = true;
+                        if (st === 'FAILED' || st === 'TIMEOUT') hasFailed = true;
+                        if (st === 'CANCELLED') hasCancelled = true;
+                        if (st !== 'SUCCESS') allSuccess = false;
+
+                        const durationStr = (exec.durationMs !== null && exec.durationMs !== undefined) ? ((exec.durationMs / 1000).toFixed(1) + 's') : '-';
+                        const badgeClass = getBadgeClass(st);
+
+                        $list.append(`
+                            <div class="card node-summary-card d-flex flex-row justify-content-between align-items-center p-2" onclick="selectTab('${nid}')">
+                                <div>
+                                    <span class="fw-bold small"><i class="bi bi-hdd-network me-1"></i>${nid}</span>
+                                    <small class="text-muted ms-2">${durationStr}</small>
+                                </div>
+                                <span class="badge status-pill ${badgeClass} small">${st}</span>
+                            </div>
+                        `);
+                    });
+
+                    if (hasRunning) overallStatus = 'RUNNING';
+                    else if (hasFailed) overallStatus = 'FAILED';
+                    else if (hasCancelled) overallStatus = 'CANCELLED';
+                    else if (allSuccess) overallStatus = 'SUCCESS';
+
+                    const $badge = $('#exec-status-badge');
+                    $badge.attr('class', 'badge status-pill ' + getBadgeClass(overallStatus)).text(overallStatus);
+
+                } else {
+                    $('#meta-view-title').text('Current Execution');
+                    $('#meta-all-view').hide();
+                    $('#meta-single-view').show();
+
+                    const exec = nodeExecutions[activeTab] || {};
+                    $('#meta-exec-id').text(exec.executionId || '-');
+                    $('#meta-node-id').text(activeTab);
+                    $('#meta-branch').text(exec.gitBranch || '-');
+                    $('#meta-commit-before').text(exec.gitCommitBefore ? String(exec.gitCommitBefore).substring(0, 8) : '-');
+                    $('#meta-commit-after').text(exec.gitCommitAfter ? String(exec.gitCommitAfter).substring(0, 8) : '-');
+                    $('#meta-started-at').text(exec.startedAt ? formatDateTime(exec.startedAt) : '-');
+                    $('#meta-duration').text(exec.durationMs !== null && exec.durationMs !== undefined ? ((exec.durationMs / 1000).toFixed(1) + 's') : '-');
+                    $('#meta-exit-code').text(exec.exitCode !== null && exec.exitCode !== undefined ? exec.exitCode : '-');
+
+                    const status = exec.status || 'IDLE';
+                    $('#exec-status-badge').attr('class', 'badge status-pill ' + getBadgeClass(status)).text(status);
+                }
+            }
+
+            function updateNodeStatusUI(data) {
+                if (!data) return;
+                const nodeId = data.nodeId || data.targetNodeId || 'unknown';
+                const exec = ensureNode(nodeId);
+                Object.assign(exec, data);
+
+                if (data.executionId) {
+                    currentExecutionId = data.executionId;
+                }
+
+                // Update tab badge
+                const $badge = $(`#tab-badge-${nodeId}`);
+                if ($badge.length) {
+                    const st = exec.status || 'IDLE';
+                    $badge.attr('class', 'badge status-pill small ' + getBadgeClass(st)).text(st);
+                }
+
+                // Check overall execution status to toggle buttons
+                checkOverallExecutionStatus();
+                renderMetaView();
+            }
+
+            function checkOverallExecutionStatus() {
+                const nodeIds = activeTargetNodes.length > 0 ? activeTargetNodes : Object.keys(nodeExecutions);
+                let anyActive = false;
+                let earliestStartTime = null;
+
+                nodeIds.forEach(nid => {
+                    const exec = nodeExecutions[nid];
+                    if (exec && (exec.status === 'RUNNING' || exec.status === 'PENDING')) {
+                        anyActive = true;
+                        if (exec.startedAt) {
+                            const st = new Date(exec.startedAt).getTime();
+                            if (!isNaN(st) && (earliestStartTime === null || st < earliestStartTime)) {
+                                earliestStartTime = st;
+                            }
+                        }
+                    }
+                });
+
+                if (anyActive) {
+                    $('#btn-dispatch').prop('disabled', true).removeAttr('title');
+                    $('.quick-actions button').prop('disabled', true).removeAttr('title');
+                    $('#btn-cancel').prop('disabled', false);
+                    $('#terminal-spinner').removeClass('d-none');
+                    if (!durationTicker) {
+                        if (earliestStartTime) {
+                            executionStartTime = earliestStartTime;
+                        }
+                        startDurationTicker();
+                    }
+                } else {
+                    $('#btn-cancel').prop('disabled', true);
+                    $('#terminal-spinner').addClass('d-none');
+                    stopDurationTicker();
+
+                    const targetCheck = isTargetExecutable();
+                    if (!targetCheck.executable) {
+                        $('#btn-dispatch').prop('disabled', true).attr('title', targetCheck.reason);
+                        $('.quick-actions button').prop('disabled', true).attr('title', targetCheck.reason);
+                    } else {
+                        const allowExecute = canExecute && !isDemoUser;
+                        $('#btn-dispatch').prop('disabled', !allowExecute).removeAttr('title');
+                        $('.quick-actions button').prop('disabled', !allowExecute).removeAttr('title');
+                    }
+                }
+            }
+
+            function quickRun(scriptName) {
+                if (!canExecute) {
+                    alert('You do not have permission to execute build scripts.');
+                    return;
+                }
+                if (isDemoUser) {
+                    alert('Executing build scripts is not allowed in the demo environment.');
+                    return;
+                }
+
+                const targetCheck = isTargetExecutable();
+                if (!targetCheck.executable) {
+                    alert('Cannot execute build:\n' + targetCheck.reason);
+                    return;
+                }
+
+                const targetType = $('#target-type').val();
+                const targetVal = $('#target-value').val();
+                let targetLabel = 'target node';
+                if (targetType === 'services') targetLabel = 'ALL service nodes in cluster';
+                else if (targetType === 'all') targetLabel = 'ALL nodes in cluster';
+                else if (targetType === 'group') targetLabel = `Group '${targetVal}'`;
+                else if (targetVal) targetLabel = `Node '${targetVal}'`;
+
+                const info = scriptPipelineMap[scriptName];
+                const title = info ? info.title : scriptName;
+
+                let confirmMsg = `Are you sure you want to execute [${title}] on ${targetLabel}?`;
+
+                if (!confirm(confirmMsg)) {
+                    return;
+                }
+
+                $('#script-selector').val(scriptName);
+                onScriptChange();
+                dispatchBuild();
+            }
+
+            function dispatchBuild() {
+                if (!canExecute) {
+                    alert('You do not have permission to execute build scripts.');
+                    return;
+                }
+                if (isDemoUser) {
+                    alert('Executing build scripts is not allowed in the demo environment.');
+                    return;
+                }
+
+                const targetCheck = isTargetExecutable();
+                if (!targetCheck.executable) {
+                    alert('Cannot execute build:\n' + targetCheck.reason);
+                    return;
+                }
+
+                const scriptName = $('#script-selector').val();
+                const branch = $('#param-branch').val().trim();
+                const targetType = $('#target-type').val();
+                const targetVal = $('#target-value').val();
+
+                let targetNodeId = null;
+                let targetGroup = null;
+                let targetAll = false;
+                let targetServices = false;
+                let targetLabel = 'all nodes';
+
+                if (targetType === 'services') {
+                    targetServices = true;
+                    targetLabel = 'ALL service nodes in cluster';
+                    const serviceNodes = nodes.filter(n => !n.console);
+                    activeTargetNodes = (serviceNodes.length > 0 ? serviceNodes : nodes).map(n => n.id);
+                } else if (targetType === 'all') {
+                    targetAll = true;
+                    targetLabel = 'ALL nodes in cluster';
+                    activeTargetNodes = nodes.map(n => n.id);
+                } else if (targetType === 'group') {
+                    targetGroup = targetVal;
+                    targetLabel = `Group '${targetVal}'`;
+                    activeTargetNodes = nodes.filter(n => n.group === targetVal).map(n => n.id);
+                } else {
+                    targetNodeId = targetVal || selectedNodeId || currentNodeId || myNodeId;
+                    targetLabel = `Node '${targetNodeId}'`;
+                    activeTargetNodes = [targetNodeId];
+                }
+                activeTargetNodes.sort();
+
+                if (!scriptName) {
+                    alert('Please select a script to execute.');
+                    return;
+                }
+
+                // Reset execution state and wait for server-assigned executionId
+                currentExecutionId = null;
+
+                // Reset logs and executions
+                allLogs = [];
+                nodeExecutions = {};
+                activeTargetNodes.forEach(nid => {
+                    const exec = ensureNode(nid);
+                    exec.executionId = null;
+                    exec.status = 'PENDING';
+                    exec.scriptName = scriptName;
+                    exec.gitBranch = branch || '-';
+                    exec.startedAt = new Date().toISOString();
+                });
+
+                activeTab = activeTargetNodes.length > 1 ? '__all__' : activeTargetNodes[0];
+                initTabs();
+
+                startDurationTicker();
+                lastHandledErrorKey = null;
+                if (healthCheckStartTimeout) {
+                    clearTimeout(healthCheckStartTimeout);
+                    healthCheckStartTimeout = null;
+                }
+                if (healthCheckTimer) {
+                    clearTimeout(healthCheckTimer);
+                    healthCheckTimer = null;
+                }
+
+                const initMsg = `[INIT] Requesting execution of ${scriptName} on ${targetLabel}...`;
+                allLogs.push({ nodeId: 'cluster', text: initMsg, type: 'info' });
+                activeTargetNodes.forEach(nid => {
+                    if (nodeExecutions[nid]) nodeExecutions[nid].logs.push({ text: initMsg, type: 'info' });
+                });
+                renderActiveTab();
+
+                if (client) {
+                    const req = {
+                        header: "execute",
+                        targetNodeId: targetNodeId,
+                        targetGroup: targetGroup,
+                        targetAll: targetAll,
+                        targetServices: targetServices,
+                        scriptName: scriptName,
+                        parameters: {}
+                    };
+                    if (branch) {
+                        req.parameters.branch = branch;
+                    }
+                    client.sendMessage(req);
+                    $('#btn-dispatch').prop('disabled', true);
+                    $('#btn-cancel').prop('disabled', false);
+                    $('#terminal-spinner').removeClass('d-none');
+                } else {
+                    alert('WebSocket connection is not established.');
+                }
+            }
+
+            function cancelBuild() {
+                if (!canExecute) {
+                    alert('You do not have permission to cancel build executions.');
+                    return;
+                }
+                if (isDemoUser) {
+                    alert('Canceling build executions is not allowed in the demo environment.');
+                    return;
+                }
+
+                if (confirm('Are you sure you want to cancel the currently running execution?')) {
+                    if (client) {
+                        let sent = 0;
+                        const targetType = $('#target-type').val();
+                        const targetVal = $('#target-value').val();
+                        const nodeIds = activeTargetNodes.length > 0 ? activeTargetNodes : Object.keys(nodeExecutions);
+
+                        nodeIds.forEach(nid => {
+                            const exec = nodeExecutions[nid];
+                            const execId = (exec && exec.executionId) ? exec.executionId : currentExecutionId;
+                            if (execId && (!exec || exec.status === 'RUNNING' || exec.status === 'PENDING')) {
+                                client.sendMessage({
+                                    header: "cancel",
+                                    executionId: execId,
+                                    targetNodeId: nid
+                                });
+                                sent++;
+                                if (exec) {
+                                    exec.status = 'CANCELLED';
+                                    const $badge = $(`#tab-badge-${nid}`);
+                                    if ($badge.length) {
+                                        $badge.attr('class', 'badge status-pill small ' + getBadgeClass('CANCELLED')).text('CANCELLED');
+                                    }
+                                }
+                            }
+                        });
+
+                        if (sent === 0 && currentExecutionId) {
+                            let fallbackNodeId = null;
+                            if (targetType === 'node') {
+                                fallbackNodeId = targetVal || selectedNodeId || currentNodeId || myNodeId;
+                            } else if (activeTargetNodes.length === 1) {
+                                fallbackNodeId = activeTargetNodes[0];
+                            }
+                            client.sendMessage({
+                                header: "cancel",
+                                executionId: currentExecutionId,
+                                targetNodeId: fallbackNodeId
+                            });
+                            nodeIds.forEach(nid => {
+                                const exec = nodeExecutions[nid];
+                                if (exec && (exec.status === 'RUNNING' || exec.status === 'PENDING')) {
+                                    exec.status = 'CANCELLED';
+                                    const $badge = $(`#tab-badge-${nid}`);
+                                    if ($badge.length) {
+                                        $badge.attr('class', 'badge status-pill small ' + getBadgeClass('CANCELLED')).text('CANCELLED');
+                                    }
+                                }
+                            });
+                        }
+                        appendTerminalLineToAll(`[ABORT] Cancellation signal sent for active executions...`, 'warn');
+                        stopDurationTicker();
+                        checkOverallExecutionStatus();
+                        renderMetaView();
+                    }
+                }
+            }
+
+            function ansiToHtml(text) {
+                if (!text) return '';
+
+                let str = text
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;');
+
+                let openSpans = 0;
+                const ansiColorRegex = new RegExp('\\u001b\\[([0-9;]*)m', 'g');
+
+                str = str.replace(ansiColorRegex, (match, codeStr) => {
+                    let tags = '';
+                    if (!codeStr || codeStr === '0' || codeStr === '') {
+                        if (openSpans > 0) {
+                            tags += '</span>'.repeat(openSpans);
+                            openSpans = 0;
+                        }
+                        return tags;
+                    }
+
+                    let styles = [];
+                    const codes = codeStr.split(';');
+                    for (let code of codes) {
+                        if (code === '0') {
+                            if (openSpans > 0) {
+                                tags += '</span>'.repeat(openSpans);
+                                openSpans = 0;
+                            }
+                        } else if (code === '1') {
+                            styles.push('font-weight:bold');
+                        } else if (code === '2') {
+                            styles.push('opacity:0.8');
+                        } else if (code === '3') {
+                            styles.push('font-style:italic');
+                        } else if (code === '4') {
+                            styles.push('text-decoration:underline');
+                        } else if (code === '30') {
+                            styles.push('color:#6e7681');
+                        } else if (code === '31') {
+                            styles.push('color:#f85149');
+                        } else if (code === '32') {
+                            styles.push('color:#3fb950');
+                        } else if (code === '33') {
+                            styles.push('color:#d29922');
+                        } else if (code === '34') {
+                            styles.push('color:#58a6ff');
+                        } else if (code === '35') {
+                            styles.push('color:#bc8cff');
+                        } else if (code === '36') {
+                            styles.push('color:#39c5cf');
+                        } else if (code === '37') {
+                            styles.push('color:#e6edf3');
+                        } else if (code === '90') {
+                            styles.push('color:#8b949e');
+                        } else if (code === '91') {
+                            styles.push('color:#ff7b72');
+                        } else if (code === '92') {
+                            styles.push('color:#56d364');
+                        } else if (code === '93') {
+                            styles.push('color:#e3b341');
+                        } else if (code === '94') {
+                            styles.push('color:#79c0ff');
+                        } else if (code === '95') {
+                            styles.push('color:#d2a8ff');
+                        } else if (code === '96') {
+                            styles.push('color:#56d4dd');
+                        } else if (code === '97') {
+                            styles.push('color:#ffffff');
+                        }
+                    }
+
+                    if (styles.length > 0) {
+                        openSpans++;
+                        tags += `<span style="${styles.join(';')};">`;
+                    }
+                    return tags;
+                });
+
+                if (openSpans > 0) {
+                    str += '</span>'.repeat(openSpans);
+                }
+
+                str = str.replace(new RegExp('\\u001b\\[[0-9;?]*[a-zA-Z]', 'g'), '');
+                return str;
+            }
+
+            function appendLineToDOM($container, text, type = '', nodeId = null) {
+                if (text === null || text === undefined) return;
+                text = String(text).replace(/\r/g, '');
+
+                const cleanText = text.replace(new RegExp('\\u001b\\[[0-9;?]*[a-zA-Z]', 'g'), '');
+
+                let lineClass = 'terminal-line';
+                if (type) lineClass += ' ' + type;
+                else if (cleanText.includes('[BUILD STARTED]') || cleanText.includes('[BUILD CANCELLED]') || cleanText.includes('[DAEMON LOG]')) lineClass += ' info';
+                else if (cleanText.includes('[SUCCESS]') || cleanText.includes('BUILD SUCCESS') || cleanText.includes('[BUILD SUCCESS]')) lineClass += ' success';
+                else if (cleanText.includes('[ERROR]') || cleanText.includes('BUILD FAILURE') || cleanText.includes('[BUILD FAILED]') || cleanText.includes('[FAILED]') || cleanText.includes('[BUILD ERROR]')) lineClass += ' error';
+                else if (cleanText.includes('[WARN]') || cleanText.includes('[WARNING]') || cleanText.includes('[BUILD LOCK]') || cleanText.includes('[BUILD TIMEOUT]')) lineClass += ' warn';
+
+                let renderedHtml = ansiToHtml(text);
+                let tagPrefix = '';
+                if (nodeId && nodeId !== 'unknown') {
+                    tagPrefix = `<span class="node-tag">${nodeId}</span> `;
+                }
+
+                $container.append(`<div class="${lineClass}">${tagPrefix}${renderedHtml}</div>`);
+            }
+
+            function appendLogLine(nodeId, line, type = '') {
+                if (line === null || line === undefined) return;
+                const exec = ensureNode(nodeId);
+                const logItem = { text: line, type: type };
+                exec.logs.push(logItem);
+
+                const allItem = { nodeId: nodeId, text: line, type: type };
+                allLogs.push(allItem);
+
+                const $body = $('#terminal-body');
+                if (activeTab === '__all__') {
+                    if (allLogs.length === 1) $body.empty();
+                    appendLineToDOM($body, line, type, nodeId);
+                    if ($('#auto-scroll').is(':checked')) {
+                        $body.scrollTop($body[0].scrollHeight);
+                    }
+                } else if (activeTab === nodeId) {
+                    if (exec.logs.length === 1) $body.empty();
+                    appendLineToDOM($body, line, type, null);
+                    if ($('#auto-scroll').is(':checked')) {
+                        $body.scrollTop($body[0].scrollHeight);
+                    }
+                }
+            }
+
+            function appendTerminalLineToAll(line, type = 'info') {
+                allLogs.push({ nodeId: 'cluster', text: line, type: type });
+                Object.keys(nodeExecutions).forEach(nid => {
+                    nodeExecutions[nid].logs.push({ text: line, type: type });
+                });
+                const $body = $('#terminal-body');
+                appendLineToDOM($body, line, type, activeTab === '__all__' ? 'cluster' : null);
+                if ($('#auto-scroll').is(':checked')) {
+                    $body.scrollTop($body[0].scrollHeight);
+                }
+            }
+
+            function clearTerminal() {
+                if (activeTab === '__all__') {
+                    allLogs = [];
+                } else if (nodeExecutions[activeTab]) {
+                    nodeExecutions[activeTab].logs = [];
+                }
+                $('#terminal-body').empty();
+            }
+
+            function downloadLogs() {
+                let textLogs = [];
+                if (activeTab === '__all__') {
+                    textLogs = allLogs.map(item => {
+                        const clean = String(item.text).replace(new RegExp('\\u001b\\[[0-9;?]*[a-zA-Z]', 'g'), '');
+                        return `[${item.nodeId || 'cluster'}] ${clean}`;
+                    });
+                } else if (nodeExecutions[activeTab]) {
+                    textLogs = nodeExecutions[activeTab].logs.map(item => {
+                        return String(item.text).replace(new RegExp('\\u001b\\[[0-9;?]*[a-zA-Z]', 'g'), '');
+                    });
+                }
+
+                if (textLogs.length === 0) {
+                    alert('No logs to download for the current tab.');
+                    return;
+                }
+
+                const blob = new Blob([textLogs.join('\n')], { type: 'text/plain;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `build-${activeTab}-${currentExecutionId || 'log'}.log`;
+                a.style.display = 'none';
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(() => {
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                }, 1000);
+            }
+
+            function formatLogTimestamp(isoString) {
+                if (!isoString) return '';
+                try {
+                    const d = dayjs(isoString);
+                    return d.isValid() ? d.format('YYYY-MM-DD HH:mm:ss') : String(isoString);
+                } catch (e) {
+                    return String(isoString);
+                }
+            }
+
+            function fetchDaemonLog(type = 'stderr') {
+                const defaultName = `daemon-${type}.log`;
+                const target = (activeTab !== '__all__' ? activeTab : (currentNodeId || myNodeId || 'gateway'));
+                appendTerminalLineToAll(`[DAEMON LOG] Fetching latest ${defaultName} from '${target}'...`, 'info');
+                fetch(contextPath + `/cluster/build/daemon-log?type=${type}&nodeId=${target}&lines=200`)
+                    .then(res => res.json())
+                    .then(res => {
+                        if (res.success && res.data) {
+                            const filename = res.data.fileName || defaultName;
+                            const timeStr = formatLogTimestamp(res.data.lastModified || res.data.creationTime);
+                            const sizeStr = (res.data.size !== undefined && res.data.size !== null) ? ` | Size: ${res.data.size} B` : '';
+                            const meta = timeStr ? ` | Date: ${timeStr}` : '';
+
+                            if (res.data.content && res.data.content.trim().length > 0) {
+                                appendTerminalLineToAll(`--- [ ${filename}${meta}${sizeStr} ] ---`, type === 'stderr' ? 'warn' : 'info');
+                                const lines = res.data.content.trim().split('\n');
+                                lines.forEach(l => appendTerminalLineToAll(l, type === 'stderr' ? 'warn' : ''));
+                                appendTerminalLineToAll(`--- [ End of ${filename} ] ---`, type === 'stderr' ? 'warn' : 'info');
+                            } else {
+                                appendTerminalLineToAll(`[DAEMON LOG] ${filename}${meta} is currently empty.`, 'info');
+                            }
+                        } else {
+                            appendTerminalLineToAll(`[DAEMON LOG] Failed to fetch ${defaultName}: ` + (res.error || 'Unknown error'), 'error');
+                        }
+                    })
+                    .catch(err => {
+                        appendTerminalLineToAll(`[DAEMON LOG] Network error while fetching ${defaultName}: ` + err.message, 'error');
+                    });
+            }
+
+            function initConsoleClient(token) {
+                const buildNode = {
+                    id: currentNodeId || myNodeId || 'gateway',
+                    endpoint: {
+                        path: contextPath + "/build-deploy",
+                        token: token
+                    }
+                };
+
+                const subscribeParams = targetExecutionId ? { executionId: targetExecutionId } : null;
+
+                client = new ConsoleClient(buildNode, {
+                    token: token,
+                    subscribeParams: subscribeParams,
+                    onBeforeConnect: () => {
+                        return fetch(contextPath + "/cluster/token", {
+                                    headers: { 'Accept': 'application/json' }
+                                })
+                                .then(response => response.json())
+                                .then(res => res.success ? res.data : null)
+                                .catch(err => {
+                                    console.error("Failed to fetch new token:", err);
+                                    return null;
+                                });
+                    },
+                    onEstablished: () => {
+                        $('#connection-indicator').text("CONNECTED").removeClass("bg-secondary bg-danger bg-warning").addClass("bg-success");
+                    },
+                    onRetry: (count, max) => {
+                        $('#connection-indicator').text(`RECONNECTING (${count}/${max})...`).removeClass("bg-success bg-danger").addClass("bg-warning");
+                    },
+                    onClose: () => {
+                        $('#connection-indicator').text("DISCONNECTED").removeClass("bg-success bg-warning").addClass("bg-danger");
+                        $('#terminal-spinner').addClass('d-none');
+                    },
+                    onMessage: (message) => {
+                        const header = message.header;
+                        const nodeId = message.nodeId || message.targetNodeId || 'unknown';
+
+                        const validNodeIds = (nodes || []).map(n => n.id);
+                        if (nodeId !== 'unknown' && nodeId !== 'cluster' && !validNodeIds.includes(nodeId) && !activeTargetNodes.includes(nodeId)) {
+                            return;
+                        }
+
+                        if (header === 'log') {
+                            if (currentExecutionId && message.executionId && message.executionId !== currentExecutionId) {
+                                return;
+                            }
+                            if (!currentExecutionId && message.executionId) {
+                                currentExecutionId = message.executionId;
+                            }
+                            const exec = ensureNode(nodeId);
+                            if (exec.status === 'PENDING' || exec.status === 'IDLE') {
+                                exec.status = 'RUNNING';
+                                const $badge = $(`#tab-badge-${nodeId}`);
+                                if ($badge.length) {
+                                    $badge.attr('class', 'badge status-pill small ' + getBadgeClass('RUNNING')).text('RUNNING');
+                                }
+                                checkOverallExecutionStatus();
+                                renderMetaView();
+                            }
+                            if (message.line) {
+                                appendLogLine(nodeId, message.line);
+                            }
+                        } else if (header === 'logBackfill') {
+                            if (currentExecutionId && message.executionId && message.executionId !== currentExecutionId) {
+                                return;
+                            }
+                            if (!currentExecutionId && message.executionId) {
+                                currentExecutionId = message.executionId;
+                            }
+                            if (message.lines && Array.isArray(message.lines)) {
+                                const exec = ensureNode(nodeId);
+                                exec.logs = [];
+                                allLogs = allLogs.filter(item => item.nodeId !== nodeId);
+                                message.lines.forEach(l => {
+                                    if (l !== null && l !== undefined) {
+                                        exec.logs.push({ text: l, type: '' });
+                                        allLogs.push({ nodeId: nodeId, text: l, type: '' });
+                                    }
+                                });
+                                if (activeTab === '__all__' || activeTab === nodeId) {
+                                    renderActiveTab();
+                                }
+                            }
+                        } else if (header === 'status') {
+                            if (!currentExecutionId && message.executionId) {
+                                currentExecutionId = message.executionId;
+                            } else if (currentExecutionId && message.executionId && message.executionId !== currentExecutionId) {
+                                const anyActive = Object.values(nodeExecutions).some(e => e.status === 'RUNNING' || e.status === 'PENDING');
+                                if (!anyActive && (message.status === 'RUNNING' || message.status === 'PENDING')) {
+                                    currentExecutionId = message.executionId;
+                                } else {
+                                    return;
+                                }
+                            }
+                            if (message.error) {
+                                const errorKey = (message.executionId || '') + ':' + message.error;
+                                if (lastHandledErrorKey !== errorKey) {
+                                    lastHandledErrorKey = errorKey;
+                                    appendLogLine(nodeId, `[ERROR] ${message.error}`, 'error');
+                                }
+                            }
+                            updateNodeStatusUI(message);
+                        } else if (header === 'subscribed' || header === 'joined') {
+                            console.log('BuildDeploy WebSocket session active');
+                        }
+                    }
+                });
+
+                client.start('');
+            }
+
+            function loadExecutionLogs(execId) {
+                if (!execId) return;
+                fetch(contextPath + "/cluster/build/logs?executionId=" + encodeURIComponent(execId), {
+                    headers: { 'Accept': 'application/json' }
+                })
+                .then(response => response.json())
+                .then(res => {
+                    if (res && res.success && res.data) {
+                        const nodeLogs = res.data.nodeLogs;
+                        if (nodeLogs && typeof nodeLogs === 'object') {
+                            allLogs = [];
+                            Object.keys(nodeLogs).forEach(nid => {
+                                const lines = nodeLogs[nid];
+                                if (Array.isArray(lines)) {
+                                    const exec = ensureNode(nid);
+                                    exec.logs = [];
+                                    lines.forEach(l => {
+                                        if (l !== null && l !== undefined) {
+                                            exec.logs.push({ text: l, type: '' });
+                                            allLogs.push({ nodeId: nid, text: l, type: '' });
+                                        }
+                                    });
+                                }
+                            });
+                            renderActiveTab();
+                        } else if (res.data.logs && Array.isArray(res.data.logs)) {
+                            const nid = res.data.nodeId || currentNodeId || myNodeId;
+                            const exec = ensureNode(nid);
+                            exec.logs = [];
+                            allLogs = [];
+                            res.data.logs.forEach(l => {
+                                if (l !== null && l !== undefined) {
+                                    exec.logs.push({ text: l, type: '' });
+                                    allLogs.push({ nodeId: nid, text: l, type: '' });
+                                }
+                            });
+                            renderActiveTab();
+                        }
+                    }
+                })
+                .catch(err => {
+                    console.warn("Failed to load execution logs for " + execId, err);
+                });
+            }
+
+            $(function() {
+                onTargetTypeChange();
+                onScriptChange();
+
+                let recentExecutedNodes = [];
+                if (initialLastExecutions && typeof initialLastExecutions === 'object') {
+                    Object.keys(initialLastExecutions).forEach(nid => {
+                        const execData = initialLastExecutions[nid];
+                        if (execData) {
+                            ensureNode(nid);
+                            Object.assign(nodeExecutions[nid], execData);
+                            updateNodeStatusUI(execData);
+                            recentExecutedNodes.push(nid);
+                        }
+                    });
+                } else if (initialLastExecution) {
+                    const nid = initialLastExecution.nodeId || initialLastExecution.targetNodeId || currentNodeId || myNodeId;
+                    if (nid) {
+                        ensureNode(nid);
+                        Object.assign(nodeExecutions[nid], initialLastExecution);
+                        updateNodeStatusUI(initialLastExecution);
+                        recentExecutedNodes.push(nid);
+                    }
+                }
+
+                if (recentExecutedNodes.length > 0) {
+                    activeTargetNodes = recentExecutedNodes;
+                } else {
+                    const type = $('#target-type').val();
+                    if (type === 'services') {
+                        const serviceNodes = nodes.filter(n => !n.console);
+                        activeTargetNodes = (serviceNodes.length > 0 ? serviceNodes : nodes).map(n => n.id);
+                    } else if (type === 'all') {
+                        activeTargetNodes = nodes.map(n => n.id);
+                    } else if (type === 'group') {
+                        const groupVal = $('#target-value').val();
+                        activeTargetNodes = nodes.filter(n => n.group === groupVal).map(n => n.id);
+                    } else {
+                        const nodeVal = $('#target-value').val() || selectedNodeId || currentNodeId || myNodeId;
+                        activeTargetNodes = nodeVal ? [nodeVal] : [];
+                    }
+                }
+                activeTargetNodes.sort();
+                if (currentNodeId && activeTargetNodes.includes(currentNodeId)) {
+                    activeTab = currentNodeId;
+                } else {
+                    activeTab = activeTargetNodes.length > 1 ? '__all__' : (activeTargetNodes[0] || '__all__');
+                }
+
+                initTabs();
+
+                if (targetExecutionId) {
+                    currentExecutionId = targetExecutionId;
+                    loadExecutionLogs(targetExecutionId);
+
+                    const refExec = initialLastExecution || (initialLastExecutions && Object.values(initialLastExecutions)[0]);
+                    if (refExec) {
+                        if (refExec.scriptName) {
+                            $('#script-selector').val(refExec.scriptName);
+                            onScriptChange();
+                        }
+                        if (refExec.gitBranch && refExec.gitBranch !== '-') {
+                            $('#param-branch').val(refExec.gitBranch);
+                        }
+                    }
+                }
+
+                fetch(contextPath + "/cluster/token", {
+                        headers: { 'Accept': 'application/json' }
+                    })
+                    .then(response => response.json())
+                    .then(res => {
+                        const token = res.success ? res.data : null;
+                        initConsoleClient(token);
+                    })
+                    .catch(err => {
+                        console.error("Failed to fetch initial token:", err);
+                        initConsoleClient(null);
+                    });
+            });
+        </script>
+    </th:block>
+</body>
+</html>

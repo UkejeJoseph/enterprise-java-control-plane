@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="https://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      layout:decorate="~{templates/default}">
+<head>
+    <style>
+        .stat-card {
+            border: 1px solid var(--bs-border-color);
+            background: var(--bs-tertiary-bg);
+            height: 100%;
+            transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+        .stat-card:hover {
+            border-color: var(--accent-color);
+            transform: translateY(-2px);
+        }
+        .icon-box {
+            width: 48px;
+            height: 48px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            margin-bottom: 16px;
+        }
+        .card-title {
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        .card-desc {
+            color: var(--bs-secondary-color);
+            font-size: 0.9rem;
+            line-height: 1.5;
+            margin-bottom: 0;
+        }
+    </style>
+</head>
+<body>
+    <th:block layout:fragment="content">
+        <div class="mb-4">
+            <h2 class="fw-bold mb-1">Aspectow <span class="text-nowrap">Management Console</span></h2>
+            <p class="text-muted">Welcome to the central control system for your Aspectran application.</p>
+        </div>
+
+        <div class="row g-3 mb-4">
+            <!-- Module 1: Operations -->
+            <div class="col-md-4" th:if="${session.USER_INFO.hasPermission('MONITOR_VIEW') || session.USER_INFO.hasRole('SUPER_ADMIN') || session.USER_INFO.hasRole('ADMIN') || session.USER_INFO.hasRole('DEMO')}">
+                <div class="card stat-card p-3 p-lg-4 d-flex flex-column h-100">
+                    <div class="icon-box text-success bg-success-subtle">
+                        <i class="bi bi-activity"></i>
+                    </div>
+                    <h5 class="card-title text-success">Live Monitoring</h5>
+                    <p class="card-desc mb-3">Monitor real-time system performance, cluster node health, and traffic metrics.</p>
+                    <div class="d-flex flex-column flex-xxl-row gap-2 mt-auto pt-2">
+                        <a th:href="@{/appmon/dashboard/}" class="btn btn-success text-nowrap flex-grow-1 d-inline-flex align-items-center justify-content-center fw-medium">
+                            Open Dashboard <i class="bi bi-arrow-right ms-1"></i>
+                        </a>
+                        <a th:href="@{/cluster/scheduler/}" class="btn btn-outline-success text-nowrap flex-grow-1 d-inline-flex align-items-center justify-content-center fw-medium">
+                            Manage Scheduler <i class="bi bi-arrow-right ms-1"></i>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Module 2: Cluster Nodes -->
+            <div class="col-md-4" th:if="${session.USER_INFO.hasRole('SUPER_ADMIN') || session.USER_INFO.hasRole('ADMIN') || session.USER_INFO.hasRole('DEMO')}">
+                <div class="card stat-card p-3 p-lg-4 d-flex flex-column h-100">
+                    <div class="icon-box text-primary bg-primary-subtle">
+                        <i class="bi bi-hdd-network"></i>
+                    </div>
+                    <h5 class="card-title text-primary">Cluster Nodes</h5>
+                    <p class="card-desc mb-3">Monitor cluster topology, manage active node instances, and inspect health status.</p>
+                    <div class="d-flex flex-column flex-xxl-row gap-2 mt-auto pt-2">
+                        <a th:href="@{/cluster/nodes/}" class="btn btn-primary text-nowrap flex-grow-1 d-inline-flex align-items-center justify-content-center fw-medium">
+                            Manage Nodes <i class="bi bi-arrow-right ms-1"></i>
+                        </a>
+                        <a th:href="@{/cluster/build/}" class="btn btn-outline-primary text-nowrap flex-grow-1 d-inline-flex align-items-center justify-content-center fw-medium">
+                            Build &amp; Deployment <i class="bi bi-arrow-right ms-1"></i>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Module 3: Governance -->
+            <div class="col-md-4" th:if="${session.USER_INFO.hasPermission('USER_MANAGE') || session.USER_INFO.hasRole('SUPER_ADMIN') || session.USER_INFO.hasRole('DEMO')}">
+                <div class="card stat-card p-3 p-lg-4 d-flex flex-column h-100">
+                    <div class="icon-box text-secondary bg-secondary-subtle">
+                        <i class="bi bi-person-badge"></i>
+                    </div>
+                    <h5 class="card-title text-secondary">Identity & Access</h5>
+                    <p class="card-desc mb-3">Manage user accounts, assigned roles, and review security-related login history.</p>
+                    <div class="d-flex flex-column flex-xxl-row gap-2 mt-auto pt-2">
+                        <a th:href="@{/user}" class="btn btn-secondary text-nowrap flex-grow-1 d-inline-flex align-items-center justify-content-center fw-medium">
+                            Manage Users <i class="bi bi-arrow-right ms-1"></i>
+                        </a>
+                        <a th:href="@{/user/login-history}" class="btn btn-outline-secondary text-nowrap flex-grow-1 d-inline-flex align-items-center justify-content-center fw-medium">
+                            Login History <i class="bi bi-arrow-right ms-1"></i>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="mb-4">
+            <div class="d-flex align-items-center gap-2 mb-3">
+                <h5 class="fw-bold mb-0">Cluster Status</h5>
+                <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle small fw-semibold" id="total-node-count" th:text="${page.nodes != null ? #lists.size(page.nodes) : 0} + ' Nodes'">0 Nodes</span>
+            </div>
+
+            <th:block th:if="${page.clusterMode == 'gateway' and page.groups != null}">
+                <div th:each="group : ${page.groups}" class="mb-4" th:if="${page.groupedNodes != null and page.groupedNodes[group.id] != null}">
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <div class="small text-muted text-uppercase fw-bold" style="font-size: 0.75rem; letter-spacing: 1px;" th:text="${group.title}">Group Title</div>
+                        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle small" style="font-size: 0.65rem;" th:text="${page.groupedNodes[group.id] != null ? #lists.size(page.groupedNodes[group.id]) : 0} + ' Nodes'">0 Nodes</span>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6 col-xxl-3" th:each="nodeItem : ${page.groupedNodes[group.id]}">
+                            <th:block th:insert="~{::node-card(nodeInfo=${nodeItem})}"></th:block>
+                        </div>
+                    </div>
+                </div>
+            </th:block>
+
+            <th:block th:if="${page.clusterMode != 'gateway' or page.groups == null}">
+                <div class="row g-3">
+                    <div class="col-md-6 col-xxl-3" th:each="nodeItem : ${page.nodes}">
+                        <th:block th:insert="~{::node-card(nodeInfo=${nodeItem})}"></th:block>
+                    </div>
+                </div>
+            </th:block>
+
+            <!-- Empty State for Cluster if no nodes -->
+            <div class="p-4 border rounded bg-body-tertiary text-center text-muted small mt-2" th:if="${#lists.isEmpty(page.nodes)}">
+                No nodes detected in the cluster.
+            </div>
+        </div>
+
+        <!-- Fragment for node card -->
+        <th:block th:fragment="node-card(nodeInfo)">
+            <div th:id="'node-card-' + ${nodeInfo.id}" class="card h-100 shadow-sm border-primary-subtle bg-body-tertiary" th:if="${nodeInfo != null}">
+                <div class="card-body p-3">
+                    <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                        <div class="d-flex align-items-center min-w-0 me-auto overflow-hidden">
+                            <div class="status-indicator flex-shrink-0 me-2" th:classappend="${nodeInfo.status == 'live' ? 'bg-success' : (nodeInfo.status == 'stopping' ? 'bg-warning' : 'bg-danger')}"></div>
+                            <span class="fw-bold text-truncate" th:text="${nodeInfo.title}" th:title="${nodeInfo.title}">Node Title</span>
+                        </div>
+                        <span class="badge bg-secondary small font-monospace flex-shrink-0" th:text="${nodeInfo.id}">node-id</span>
+                    </div>
+                    <div class="d-flex flex-wrap justify-content-between gap-x-3 gap-y-1 small text-muted">
+                        <div class="text-truncate">
+                            <i class="bi bi-pc-display me-1"></i><span th:text="${nodeInfo.host}">127.0.0.1</span>
+                        </div>
+                        <div class="text-nowrap">
+                            <i class="bi bi-hdd-network me-1"></i>Port: <span th:text="${nodeInfo.port}">8080</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </th:block>
+
+        <!-- Script for checking direct nodes health -->
+        <script th:inline="javascript">
+            const clusterMode = [[${page.clusterMode}]];
+            const nodes = [[${page.nodes}]];
+            const myNodeId = [[${page.myNodeId}]];
+            const contextPath = [[@{/}]].replace(/\/$/, '');
+
+            function checkDirectNodesHealth() {
+                if (clusterMode !== 'direct' || !nodes) return;
+
+                nodes.forEach(n => {
+                    if (n.id === myNodeId) {
+                        updateNodeStatusUI(n.id, 'live');
+                        return;
+                    }
+
+                    let path = contextPath + "/nodes/" + n.id + "/ping";
+                    if (n.port && (location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
+                        const url = new URL(path, location.href);
+                        url.port = n.port;
+                        path = url.origin + url.pathname;
+                    }
+
+                    fetch(path, { method: 'GET' })
+                        .then(res => {
+                            updateNodeStatusUI(n.id, 'live');
+                        })
+                        .catch(err => {
+                            console.warn("Health check failed for node:", n.id, err);
+                            updateNodeStatusUI(n.id, 'dead');
+                        });
+                });
+            }
+
+            function updateNodeStatusUI(nodeId, status) {
+                const $indicator = $('#node-card-' + nodeId + ' .status-indicator');
+                if ($indicator.length) {
+                    $indicator.removeClass('bg-success bg-warning bg-danger');
+                    if (status === 'live') {
+                        $indicator.addClass('bg-success');
+                    } else if (status === 'stopping') {
+                        $indicator.addClass('bg-warning');
+                    } else {
+                        $indicator.addClass('bg-danger');
+                    }
+                }
+            }
+
+            $(function() {
+                checkDirectNodesHealth();
+            });
+        </script>
+    </th:block>
+</body>
+</html>

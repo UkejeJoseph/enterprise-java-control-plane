@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="https://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      layout:decorate="~{templates/__${page.layout}__}">
+<head>
+    <style>
+        .table-audit th {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            color: var(--bs-secondary-color);
+            font-weight: 600;
+        }
+        .table-audit td {
+            font-size: 0.85rem;
+            vertical-align: middle;
+        }
+        .hash-code {
+            font-family: var(--bs-font-monospace);
+            font-size: 0.75rem;
+            background: rgba(125, 125, 125, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: var(--bs-body-color);
+        }
+        .terminal-modal-body {
+            padding: 0.6rem;
+            border-radius: 8px;
+            font-family: var(--bs-font-monospace);
+            font-size: 0.8rem;
+            color: #d4d4d4;
+            background: #181818;
+            white-space: pre-wrap;
+            word-break: break-all;
+            line-height: 1.45;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .terminal-line {
+            white-space: pre;
+            margin-bottom: 1px;
+        }
+        .table-detail-container {
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .table-detail-container .table {
+            margin-bottom: 0;
+            border: none;
+        }
+        .table-detail-container th {
+            background-color: var(--bs-tertiary-bg) !important;
+            color: var(--bs-secondary-color);
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        @media print {
+            html, body, [data-bs-theme="dark"] {
+                background-color: #fff !important;
+                color: #000 !important;
+                --bs-body-bg: #fff !important;
+                --bs-body-color: #000 !important;
+            }
+            p, h1, h2, h3, h4, h5, h6, span, td, th, .text-muted {
+                color: #000 !important;
+            }
+            .sidebar, .navbar, .filter-panel, .pagination-container, .btn, .d-print-none {
+                display: none !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <th:block layout:fragment="content">
+        <th:block th:if="${session.USER_INFO.hasPermission('BUILD_VIEW') || session.USER_INFO.hasPermission('BUILD_EXECUTE') || session.USER_INFO.hasRole('SUPER_ADMIN')}">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-start gap-3 mb-3">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <div class="d-flex align-items-center gap-2 mb-1">
+                            <h3 class="fw-bold mb-0">Build &amp; Deployment Audit Trail</h3>
+                        </div>
+                        <p class="text-muted mb-0">Immutable compliance execution logs, Git commit track records, and SHA-256 integrity proofs</p>
+                    </div>
+                    <button type="button" class="btn-close d-md-none ms-2" onclick="window.close()" aria-label="Close" title="Close" th:if="${page.layout == 'popup'}"></button>
+                </div>
+                <div class="d-flex flex-wrap justify-content-end align-items-center gap-2">
+                    <button th:if="${page.layout != 'popup'}" type="button" class="btn btn-sm btn-outline-primary" onclick="openBuildConsole('', '')">
+                        <i class="bi bi-play-circle"></i> Go to Build Console
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+                        <i class="bi bi-printer"></i> Print Report
+                    </button>
+                    <a class="btn btn-sm btn-success" href="javascript:void(0)" onclick="exportCsv()">
+                        <i class="bi bi-file-earmark-spreadsheet"></i> Export CSV Report
+                    </a>
+                </div>
+            </div>
+
+            <!-- Filter Panel -->
+            <div class="card filter-panel">
+                <form method="get" th:action="@{/cluster/build/audit/}" class="row g-2 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label small text-muted mb-1">Target Node</label>
+                        <select name="nodeId" class="form-select form-select-sm">
+                            <option value="">All Nodes</option>
+                            <option th:each="n : ${page.nodes}"
+                                    th:value="${n.id}"
+                                    th:text="${n.title + ' (' + n.id + ')'}"
+                                    th:selected="${n.id == page.targetNodeId}">
+                            </option>
+                            <option th:if="${page.targetNodeId != null and !#strings.isEmpty(page.targetNodeId) and !#lists.contains(page.nodes.![id], page.targetNodeId)}"
+                                    th:value="${page.targetNodeId}"
+                                    th:text="${page.targetNodeId + ' (Offline / History)'}"
+                                    selected>
+                            </option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small text-muted mb-1">Status</label>
+                        <select name="status" class="form-select form-select-sm">
+                            <option value="">All Statuses</option>
+                            <option value="SUCCESS" th:selected="${page.status == 'SUCCESS'}">SUCCESS</option>
+                            <option value="FAILED" th:selected="${page.status == 'FAILED'}">FAILED</option>
+                            <option value="RUNNING" th:selected="${page.status == 'RUNNING'}">RUNNING</option>
+                            <option value="CANCELLED" th:selected="${page.status == 'CANCELLED'}">CANCELLED</option>
+                        </select>
+                    </div>
+                    <div class="col-md-5">
+                        <label class="form-label small text-muted mb-1">Keyword Search</label>
+                        <div class="input-group input-group-sm">
+                            <input type="text" name="q" class="form-control" placeholder="Search execution ID, script, commit, requester..." th:value="${page.searchKeyword}">
+                            <button class="btn btn-primary" type="submit"><i class="bi bi-search"></i> Search</button>
+                        </div>
+                    </div>
+                    <div class="col-md-2 text-end">
+                        <a th:href="@{/cluster/build/audit/}" class="btn btn-sm btn-outline-secondary">Reset</a>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Audit Table Card -->
+            <div class="card shadow-sm overflow-hidden">
+                <div class="table-responsive">
+                    <table class="table table-hover table-audit mb-0 text-nowrap">
+                        <thead>
+                            <tr>
+                                <th class="ps-3">ID</th>
+                                <th>Execution ID</th>
+                                <th>Target Node</th>
+                                <th>Script Name</th>
+                                <th>Requester</th>
+                                <th>Status</th>
+                                <th>Git Changes</th>
+                                <th>Started At</th>
+                                <th>Duration</th>
+                                <th>Integrity</th>
+                                <th class="text-end pe-3">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr th:if="${#lists.isEmpty(page.historyList)}">
+                                <td colspan="11" class="text-center py-4 text-muted">
+                                    <i class="bi bi-inbox fs-3 d-block mb-1"></i>
+                                    No build &amp; deployment audit history records found.
+                                </td>
+                            </tr>
+                            <tr th:each="item : ${page.historyList}">
+                                <td class="text-muted ps-3" th:text="${item.historyId}">1</td>
+                                <td>
+                                    <a href="javascript:void(0)"
+                                       th:data-execution-id="${item.executionId}"
+                                       th:data-node-id="${item.targetNodeId}"
+                                       onclick="openBuildConsole(this.dataset.executionId, this.dataset.nodeId)"
+                                       class="hash-code text-primary fw-bold"
+                                       th:text="${item.executionId}"
+                                       title="Open in Build Console">bld_123</a>
+                                </td>
+                                <td>
+                                    <span class="badge bg-secondary-subtle text-body" th:text="${item.targetNodeId}">node-1</span>
+                                </td>
+                                <td>
+                                    <span th:text="${item.scriptName}">5-pull_build_deploy.sh</span>
+                                </td>
+                                <td th:text="${item.requester}">admin</td>
+                                <td>
+                                    <span th:if="${item.status == 'SUCCESS'}" class="badge status-pill bg-success small">SUCCESS</span>
+                                    <span th:if="${item.status == 'FAILED'}" class="badge status-pill bg-danger small">FAILED</span>
+                                    <span th:if="${item.status == 'RUNNING'}" class="badge status-pill bg-primary small">RUNNING</span>
+                                    <span th:if="${item.status == 'CANCELLED'}" class="badge status-pill bg-warning small">CANCELLED</span>
+                                </td>
+                                <td>
+                                    <div th:if="${item.gitCommitBefore != null || item.gitCommitAfter != null}">
+                                        <span class="hash-code text-muted" th:text="${item.gitCommitBefore != null ? #strings.substring(item.gitCommitBefore,0,7) : 'HEAD'}">abc</span>
+                                        <i class="bi bi-arrow-right text-muted small mx-1"></i>
+                                        <span class="hash-code text-success fw-bold" th:text="${item.gitCommitAfter != null ? #strings.substring(item.gitCommitAfter,0,7) : 'HEAD'}">def</span>
+                                        <div th:if="${item.gitBranch != null}" class="small text-muted" th:text="'(' + ${item.gitBranch} + ')'">main</div>
+                                    </div>
+                                    <span th:if="${item.gitCommitBefore == null && item.gitCommitAfter == null}" class="text-muted small">-</span>
+                                </td>
+                                <td class="small format-local-time" th:data-utc="${item.startedAt}" th:text="${#temporals.format(item.startedAt, 'yyyy-MM-dd HH:mm:ss')}">2026-08-18 12:00:00</td>
+                                <td class="small" th:text="${item.durationMs != null ? (item.durationMs / 1000.0) + 's' : '-'}">12.4s</td>
+                                <td>
+                                    <span th:if="${item.integrityHash != null}" class="badge bg-success-subtle text-success" title="SHA-256 Verified">
+                                        <i class="bi bi-shield-check"></i> SHA-256
+                                    </span>
+                                    <span th:if="${item.integrityHash == null}" class="badge bg-secondary-subtle text-muted">
+                                        Pending
+                                    </span>
+                                </td>
+                                <td class="text-end pe-2">
+                                    <button type="button"
+                                            class="btn btn-xs btn-outline-success d-none d-xxl-inline-block"
+                                            th:data-execution-id="${item.executionId}"
+                                            th:data-node-id="${item.targetNodeId}"
+                                            onclick="openBuildConsole(this.dataset.executionId, this.dataset.nodeId)"
+                                            title="Open in Build Console">
+                                        <i class="bi bi-play-circle"></i> Console
+                                    </button>
+                                    <button class="btn btn-xs btn-outline-primary" th:onclick="'viewDetail(' + ${item.historyId} + ')'" title="View Audit Details">
+                                        <i class="bi bi-eye"></i> Detail
+                                    </button>
+                                    <button class="btn btn-xs btn-outline-secondary" th:onclick="'viewLogs(' + ${item.historyId} + ')'" title="View Console Logs">
+                                        <i class="bi bi-terminal"></i> Logs
+                                    </button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Pagination -->
+            <div th:if="${page.pageInfo != null && page.pageInfo.totalPages > 1}" class="d-flex justify-content-between align-items-center mt-3">
+                <span class="small text-muted" th:text="'Total ' + ${page.pageInfo.totalElements} + ' records (Page ' + ${page.pageInfo.number} + ' of ' + ${page.pageInfo.totalPages} + ')'"></span>
+                <ul class="pagination pagination-sm mb-0">
+                    <li class="page-item" th:classappend="${page.pageInfo.number <= 1} ? 'disabled'">
+                        <a class="page-link" th:href="@{/cluster/build/audit/(page=${page.pageInfo.number - 1}, nodeId=${page.targetNodeId}, status=${page.status}, q=${page.searchKeyword})}">Previous</a>
+                    </li>
+                    <li class="page-item active">
+                        <span class="page-link" th:text="${page.pageInfo.number}">1</span>
+                    </li>
+                    <li class="page-item" th:classappend="${page.pageInfo.number >= page.pageInfo.totalPages} ? 'disabled'">
+                        <a class="page-link" th:href="@{/cluster/build/audit/(page=${page.pageInfo.number + 1}, nodeId=${page.targetNodeId}, status=${page.status}, q=${page.searchKeyword})}">Next</a>
+                    </li>
+                </ul>
+            </div>
+
+            <div th:if="${page.layout == 'popup'}" class="d-flex justify-content-end mt-3 pt-3 border-top d-print-none">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="window.close()">Close</button>
+            </div>
+
+            <!-- Detail Modal -->
+            <div class="modal fade" id="detailModal" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title fw-bold"><i class="bi bi-shield-check text-primary me-2"></i>Audit Verification Report</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body" id="detail-modal-body">
+                            <!-- Dynamic content -->
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Log Viewer Modal -->
+            <div class="modal fade" id="logModal" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-xl">
+                    <div class="modal-content">
+                        <div class="modal-header bg-dark text-white">
+                            <h5 class="modal-title fw-bold"><i class="bi bi-terminal me-2"></i>Console Output Stream</h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body p-0">
+                            <div id="modal-log-content" class="terminal-modal-body m-3">Loading logs...</div>
+                        </div>
+                        <div class="modal-footer">
+                            <a id="btn-download-modal-log" class="btn btn-sm btn-outline-primary" href="javascript:void(0)" download>
+                                <i class="bi bi-download"></i> Download Full Log
+                            </a>
+                            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </th:block>
+        <div th:unless="${session.USER_INFO.hasPermission('BUILD_VIEW') || session.USER_INFO.hasPermission('BUILD_EXECUTE') || session.USER_INFO.hasRole('SUPER_ADMIN')}" class="alert alert-danger my-4">
+            <h4 class="alert-heading"><i class="bi bi-exclamation-triangle-fill"></i> Access Denied</h4>
+            <p class="mb-0">You do not have permission to access this page.</p>
+        </div>
+    </th:block>
+
+    <th:block layout:fragment="script">
+        <script th:inline="javascript">
+            const contextPath = [[@{/}]].replace(/\/$/, '');
+            let currentLoadedLogs = "";
+            let currentLogHistoryId = null;
+
+            function exportCsv() {
+                const url = new URL(contextPath + '/cluster/build/audit/export', window.location.href);
+                const searchParams = new URLSearchParams(window.location.search);
+                searchParams.set('timeZone', Intl.DateTimeFormat().resolvedOptions().timeZone);
+                url.search = searchParams.toString();
+                location.href = url.href;
+            }
+
+            function openBuildConsole(executionId, nodeId) {
+                let url = contextPath + '/cluster/build/';
+                const params = [];
+                if (executionId) params.push('executionId=' + encodeURIComponent(executionId));
+                if (nodeId) params.push('nodeId=' + encodeURIComponent(nodeId));
+                if (params.length > 0) {
+                    url += '?' + params.join('&');
+                }
+
+                if (window.opener && !window.opener.closed) {
+                    try {
+                        window.opener.location.href = url;
+                        window.opener.focus();
+                        return false;
+                    } catch (e) {
+                        console.warn("Failed to navigate opener window:", e);
+                    }
+                }
+                window.open(url, '_blank');
+                return false;
+            }
+
+            function viewDetail(historyId) {
+                fetch(contextPath + `/cluster/build/audit/detail/${historyId}`)
+                    .then(res => res.json())
+                    .then(res => {
+                        if (res.success) {
+                            const h = res.data.history;
+                            const verified = res.data.integrityVerified;
+                            const integrityStatus = res.data.integrityStatus || (verified ? 'VERIFIED' : (h.status === 'RUNNING' || h.status === 'PENDING' || !h.integrityHash ? 'PENDING' : 'FAILED'));
+
+                            let alertClass = 'alert-danger';
+                            let verifiedBadge = '<span class="badge bg-danger"><i class="bi bi-exclamation-triangle-fill"></i> Integrity Verification Failed!</span>';
+
+                            if (integrityStatus === 'VERIFIED') {
+                                alertClass = 'alert-success';
+                                verifiedBadge = '<span class="badge bg-success"><i class="bi bi-check-circle-fill"></i> Cryptographically Valid &amp; Untampered</span>';
+                            } else if (integrityStatus === 'PENDING') {
+                                alertClass = 'alert-warning';
+                                verifiedBadge = '<span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split"></i> Pending (Execution in progress)</span>';
+                            }
+
+                            const statusBadgeClass = h.status === 'SUCCESS' ? 'bg-success' : (h.status === 'FAILED' ? 'bg-danger' : (h.status === 'RUNNING' ? 'bg-primary' : 'bg-warning'));
+
+                            let html = `
+                                <div class="alert ${alertClass} d-flex flex-wrap justify-content-between align-items-center mb-3">
+                                    <div><strong>Integrity Check:</strong> ${verifiedBadge}</div>
+                                    <div class="small text-muted">Algorithm: SHA-256</div>
+                                </div>
+                                <div class="card shadow-sm table-responsive">
+                                    <table class="table table-sm small mb-0 text-nowrap">
+                                        <tbody>
+                                            <tr>
+                                                <th class="bg-body-tertiary text-body-secondary" style="width: 25%;">Execution ID</th>
+                                                <td>
+                                                    <a href="javascript:void(0)" onclick="openBuildConsole('${h.executionId}', '${h.targetNodeId}')" class="hash-code text-primary fw-bold text-decoration-none" title="Open in Build Console">
+                                                        <code>${h.executionId}</code> <i class="bi bi-box-arrow-up-right small ms-1"></i>
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                            <tr><th class="bg-body-tertiary text-body-secondary">Target Node</th><td><strong>${h.targetNodeId}</strong></td></tr>
+                                            <tr><th class="bg-body-tertiary text-body-secondary">Script Executed</th><td>${h.scriptName}</td></tr>
+                                            <tr><th class="bg-body-tertiary text-body-secondary">Requester</th><td>${h.requester}</td></tr>
+                                            <tr><th class="bg-body-tertiary text-body-secondary">Execution Status</th><td><span class="badge ${statusBadgeClass}">${h.status}</span> (Exit Code: ${h.exitCode !== null && h.exitCode !== undefined ? h.exitCode : '-'})</td></tr>
+                                            <tr><th class="bg-body-tertiary text-body-secondary">Started At</th><td>${formatDateTime(h.startedAt)}</td></tr>
+                                            <tr><th class="bg-body-tertiary text-body-secondary">Finished At</th><td>${formatDateTime(h.finishedAt)}</td></tr>
+                                            <tr><th class="bg-body-tertiary text-body-secondary">Duration</th><td>${h.durationMs ? (h.durationMs / 1000).toFixed(2) + ' seconds' : '-'}</td></tr>
+                                            <tr><th class="bg-body-tertiary text-body-secondary">Git Branch</th><td>${h.gitBranch || '-'}</td></tr>
+                                            <tr><th class="bg-body-tertiary text-body-secondary">Git Commit Before</th><td><code>${h.gitCommitBefore || '-'}</code></td></tr>
+                                            <tr><th class="bg-body-tertiary text-body-secondary">Git Commit After</th><td><code>${h.gitCommitAfter || '-'}</code></td></tr>
+                                            <tr><th class="bg-body-tertiary text-body-secondary">Git Commit Message</th><td>${h.gitCommitMsg || '-'}</td></tr>
+                                            <tr><th class="bg-body-tertiary text-body-secondary">SHA-256 Digest</th><td><small class="text-break font-monospace">${h.integrityHash || '(Generated upon execution completion)'}</small></td></tr>
+                                            ${h.errorSummary ? `<tr><th class="bg-body-tertiary text-danger">Error Summary</th><td class="text-danger">${h.errorSummary}</td></tr>` : ''}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            `;
+                            $('#detail-modal-body').html(html);
+                            new bootstrap.Modal(document.getElementById('detailModal')).show();
+                        } else {
+                            alert('Failed to load audit detail: ' + formatErrorMessage(res));
+                        }
+                    })
+                    .catch(err => {
+                        alert('Failed to communicate with server: ' + (err.message || err));
+                    });
+            }
+
+            function formatErrorMessage(res) {
+                if (!res) return 'Unknown error';
+                if (typeof res.error === 'string') return res.error;
+                if (typeof res.error === 'object' && res.error !== null) {
+                    if (res.error.message) return res.error.message;
+                    if (res.error.error) return res.error.error;
+                    return JSON.stringify(res.error);
+                }
+                return res.message || 'Unknown error';
+            }
+
+            function ansiToHtml(text) {
+                if (!text) return '';
+
+                let str = text
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;');
+
+                let openSpans = 0;
+                const ansiColorRegex = new RegExp('\\u001b\\[([0-9;]*)m', 'g');
+
+                str = str.replace(ansiColorRegex, (match, codeStr) => {
+                    let tags = '';
+                    if (!codeStr || codeStr === '0' || codeStr === '') {
+                        if (openSpans > 0) {
+                            tags += '</span>'.repeat(openSpans);
+                            openSpans = 0;
+                        }
+                        return tags;
+                    }
+
+                    let styles = [];
+                    const codes = codeStr.split(';');
+                    for (let code of codes) {
+                        if (code === '0') {
+                            if (openSpans > 0) {
+                                tags += '</span>'.repeat(openSpans);
+                                openSpans = 0;
+                            }
+                        } else if (code === '1') {
+                            styles.push('font-weight:bold');
+                        } else if (code === '2') {
+                            styles.push('opacity:0.8');
+                        } else if (code === '3') {
+                            styles.push('font-style:italic');
+                        } else if (code === '4') {
+                            styles.push('text-decoration:underline');
+                        } else if (code === '30') {
+                            styles.push('color:#6e7681');
+                        } else if (code === '31') {
+                            styles.push('color:#f85149');
+                        } else if (code === '32') {
+                            styles.push('color:#3fb950');
+                        } else if (code === '33') {
+                            styles.push('color:#d29922');
+                        } else if (code === '34') {
+                            styles.push('color:#58a6ff');
+                        } else if (code === '35') {
+                            styles.push('color:#bc8cff');
+                        } else if (code === '36') {
+                            styles.push('color:#39c5cf');
+                        } else if (code === '37') {
+                            styles.push('color:#e6edf3');
+                        } else if (code === '90') {
+                            styles.push('color:#8b949e');
+                        } else if (code === '91') {
+                            styles.push('color:#ff7b72');
+                        } else if (code === '92') {
+                            styles.push('color:#56d364');
+                        } else if (code === '93') {
+                            styles.push('color:#e3b341');
+                        } else if (code === '94') {
+                            styles.push('color:#79c0ff');
+                        } else if (code === '95') {
+                            styles.push('color:#d2a8ff');
+                        } else if (code === '96') {
+                            styles.push('color:#56d4dd');
+                        } else if (code === '97') {
+                            styles.push('color:#ffffff');
+                        }
+                    }
+
+                    if (styles.length > 0) {
+                        openSpans++;
+                        tags += `<span style="${styles.join(';')};">`;
+                    }
+                    return tags;
+                });
+
+                if (openSpans > 0) {
+                    str += '</span>'.repeat(openSpans);
+                }
+
+                str = str.replace(new RegExp('\\u001b\\[[0-9;?]*[a-zA-Z]', 'g'), '');
+                return str;
+            }
+
+            function viewLogs(historyId) {
+                currentLogHistoryId = historyId;
+                const downloadUrl = contextPath + `/cluster/build/audit/download-log/${historyId}`;
+                $('#btn-download-modal-log').attr('href', downloadUrl);
+                $('#modal-log-content').html('<div class="text-secondary">Fetching decompressed console stream from database...</div>');
+                const modal = new bootstrap.Modal(document.getElementById('logModal'));
+                modal.show();
+
+                fetch(contextPath + `/cluster/build/audit/log/${historyId}`)
+                    .then(res => res.json())
+                    .then(res => {
+                        if (res.success) {
+                            currentLoadedLogs = res.data || "No console log output recorded.";
+                            const lines = currentLoadedLogs.split('\n');
+                            const htmlLines = lines.map(line => {
+                                const clean = line.replace(new RegExp('\\u001b\\[[0-9;?]*[a-zA-Z]', 'g'), '');
+                                let lineClass = 'terminal-line';
+                                if (clean.includes('[BUILD STARTED]') || clean.includes('[BUILD CANCELLED]') || clean.includes('[DAEMON LOG]')) lineClass += ' text-info';
+                                else if (clean.includes('[SUCCESS]') || clean.includes('BUILD SUCCESS') || clean.includes('[BUILD SUCCESS]')) lineClass += ' text-success fw-bold';
+                                else if (clean.includes('[ERROR]') || clean.includes('BUILD FAILURE') || clean.includes('[BUILD FAILED]') || clean.includes('[FAILED]') || clean.includes('[BUILD ERROR]')) lineClass += ' text-danger fw-bold';
+                                else if (clean.includes('[WARN]') || clean.includes('[WARNING]') || clean.includes('[BUILD LOCK]') || clean.includes('[BUILD TIMEOUT]')) lineClass += ' text-warning';
+                                return `<div class="${lineClass}">${ansiToHtml(line)}</div>`;
+                            }).join('');
+                            $('#modal-log-content').html(htmlLines || '<div class="text-secondary">No console log output recorded.</div>');
+                        } else {
+                            $('#modal-log-content').html('<div class="text-danger">Failed to load logs: ' + formatErrorMessage(res) + '</div>');
+                        }
+                    })
+                    .catch(err => {
+                        $('#modal-log-content').html('<div class="text-danger">Network error loading logs: ' + (err.message || err) + '</div>');
+                    });
+            }
+        </script>
+    </th:block>
+</body>
+</html>

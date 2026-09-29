@@ -1,0 +1,125 @@
+/*
+ * Copyright (c) 2020-present The Aspectran Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.aspectran.aspectow.console.common.util;
+
+import com.aspectran.utils.StringUtils;
+
+/**
+ * Utility class providing web-related helper methods for Aspectow Console.
+ */
+public abstract class ConsoleWebUtils {
+
+    /**
+     * Escapes HTML special characters in the input string to prevent XSS attacks.
+     * @param input the raw input string
+     * @return the HTML-escaped string
+     */
+    public static String escapeHtml(String input) {
+        if (input == null) {
+            return null;
+        }
+        return input.replace("&", "&amp;")
+                    .replace("<", "&lt;")
+                    .replace(">", "&gt;")
+                    .replace("\"", "&quot;")
+                    .replace("'", "&#x27;")
+                    .replace("/", "&#x2F;");
+    }
+
+    /**
+     * Sanitizes user input string by stripping potential script tags.
+     * @param input the raw input string
+     * @return the sanitized string
+     */
+    public static String cleanInput(String input) {
+        if (input == null) {
+            return null;
+        }
+        return input.replaceAll("(?i)<script.*?>.*?</script>", "")
+                    .replaceAll("(?i)<iframe.*?>.*?</iframe>", "")
+                    .replaceAll("(?i)javascript:", "");
+    }
+
+    /**
+     * Masks an email address for display.
+     * e.g., "john.doe@example.com" -> "j***e@example.com"
+     * @param email the email address
+     * @return the masked email address
+     */
+    public static String maskEmail(String email) {
+        if (!StringUtils.hasLength(email) || !email.contains("@")) {
+            return email;
+        }
+        String[] parts = email.split("@");
+        String name = parts[0];
+        String domain = parts[1];
+        if (name.length() <= 2) {
+            return name.charAt(0) + "*@" + domain;
+        }
+        return name.charAt(0) + "***" + name.charAt(name.length() - 1) + "@" + domain;
+    }
+
+    /**
+     * Masks an IP address for display.
+     * e.g., "192.168.1.100" -> "192.168.*.*"
+     * @param ip the IP address
+     * @return the masked IP address
+     */
+    public static String maskIpAddress(String ip) {
+        if (!StringUtils.hasLength(ip)) {
+            return ip;
+        }
+        if (ip.contains(".")) {
+            String[] parts = ip.split("\\.");
+            if (parts.length == 4) {
+                return parts[0] + "." + parts[1] + ".*.*";
+            }
+        } else if (ip.contains(":")) {
+            return ip.replaceAll("(:[^:]*){1,4}$", ":*:*:*:*");
+        }
+        return ip;
+    }
+
+    /**
+     * Masks a secret or encrypted value for UI display.
+     * e.g., "eb8a37f912c" -> "eb8a******"
+     * @param secret the secret string
+     * @return the masked string
+     */
+    public static String maskSecret(String secret) {
+        if (!StringUtils.hasLength(secret)) {
+            return secret;
+        }
+        if (secret.length() <= 8) {
+            return "********";
+        }
+        return secret.substring(0, 4) + "*".repeat(secret.length() - 4);
+    }
+
+    /**
+     * Masks sensitive Apon configuration for UI display.
+     * @param apon the Apon configuration string
+     * @return the masked Apon configuration string
+     */
+    public static String maskSensitiveApon(String apon) {
+        if (apon == null) {
+            return null;
+        }
+        String regex = "(?i)([\\w\\-\\.]*(?:password|secret|passphrase|privatekey|secretkey)[\\w\\-\\.]*)\\s*:\\s*(\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^'\\\\]|\\\\.)*'|[^\\s,{}#\\[\\]\\(\\)]+)";
+        return apon.replaceAll(regex, "$1: ********");
+    }
+
+}

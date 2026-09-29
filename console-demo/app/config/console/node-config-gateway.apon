@@ -1,0 +1,13 @@
+# Cluster-wide settings
+cluster: {
+    id: console-demo-cluster1
+    mode: gateway  # direct or gateway
+    scheduler: {
+        releasedOnUnlock: false
+    }
+}
+group: {
+    id: console-demo-group1
+    title: Console Demo Group
+    description: This group is for Console Demo.
+}

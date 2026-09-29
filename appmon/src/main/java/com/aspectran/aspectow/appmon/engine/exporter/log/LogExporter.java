@@ -1,0 +1,355 @@
+/*
+ * Copyright (c) 2020-present The Aspectran Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.aspectran.aspectow.appmon.engine.exporter.log;
+
+import com.aspectran.aspectow.appmon.engine.config.LogInfo;
+import com.aspectran.aspectow.appmon.engine.exporter.AbstractExporter;
+import com.aspectran.aspectow.appmon.engine.exporter.ExporterManager;
+import com.aspectran.aspectow.appmon.engine.exporter.ExporterType;
+import com.aspectran.aspectow.appmon.engine.relay.CommandOptions;
+import com.aspectran.utils.ToStringBuilder;
+import org.apache.commons.io.input.ReversedLinesFileReader;
+import org.apache.commons.io.input.Tailer;
+import org.jspecify.annotations.NonNull;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.Charset;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * An exporter that tails a log file and broadcasts new lines.
+ * It uses Apache Commons IO's {@link Tailer} for efficient file monitoring.
+ *
+ * <p>Created: 2020. 12. 24.</p>
+ */
+public class LogExporter extends AbstractExporter {
+
+    private static final Logger logger = LoggerFactory.getLogger(LogExporter.class);
+
+    private static final ExporterType TYPE = ExporterType.LOG;
+
+    private static final Charset DEFAULT_CHARSET = Charset.defaultCharset();
+
+    private static final long DEFAULT_SAMPLE_INTERVAL = 1000L;
+
+    private static final Pattern ARCHIVED_FILE_PATTERN =
+            Pattern.compile(".*\\.(\\d{4}-\\d{2}-\\d{2})(?:\\.(\\d+))?\\.(?:log|log\\.gz)$");
+
+    private final ExporterManager exporterManager;
+
+    private final LogInfo logInfo;
+
+    private final String prefix;
+
+    private final String plogPrefix;
+
+    /** the Charset to be used for reading the file */
+    private final Charset charset;
+
+    /** how frequently to check for file changes; defaults to 1 second */
+    private final long sampleInterval;
+
+    private final int lastLines;
+
+    private final int maxBatchSize;
+
+    private final long flushDelayMillis;
+
+    /** the log file to tail */
+    private final File logFile;
+
+    private LogTailerListener tailerListener;
+
+    private Tailer tailer;
+
+    /**
+     * Instantiates a new LogExporter.
+     * @param exporterManager the exporter manager
+     * @param logInfo the log configuration
+     * @param logFile the log file to tail
+     */
+    public LogExporter(
+            @NonNull ExporterManager exporterManager,
+            @NonNull LogInfo logInfo,
+            @NonNull File logFile) {
+        super(TYPE);
+        this.exporterManager = exporterManager;
+        this.logInfo = logInfo;
+        this.prefix = exporterManager.getNodeId() + ":" + logInfo.getAppId() + ":" + TYPE + ":" + logInfo.getLogId() + ":";
+        this.plogPrefix = exporterManager.getNodeId() + ":" + logInfo.getAppId() + ":" + TYPE + "/p:" + logInfo.getLogId() + ":";
+        this.charset = (logInfo.getCharset() != null ? Charset.forName(logInfo.getCharset()): DEFAULT_CHARSET);
+        this.sampleInterval = (logInfo.getSampleInterval() > 0 ? logInfo.getSampleInterval() : DEFAULT_SAMPLE_INTERVAL);
+        this.lastLines = logInfo.getLastLines();
+        this.maxBatchSize = logInfo.getMaxBatchSize();
+        this.flushDelayMillis = logInfo.getFlushDelayMillis();
+        this.logFile = logFile;
+    }
+
+    @Override
+    public String getName() {
+        return logInfo.getLogId();
+    }
+
+    @Override
+    public void read(@NonNull List<String> messages, CommandOptions commandOptions) {
+        if (lastLines > 0) {
+            try {
+                List<String> lines = new ArrayList<>();
+                if (logFile.exists()) {
+                    lines.addAll(readLastLines(logFile, lastLines));
+                }
+                if (lines.size() < lastLines) {
+                    File archivedDir = getArchivedDir();
+                    if (archivedDir.exists() && archivedDir.isDirectory()) {
+                        File[] archivedFiles = getArchivedFiles(archivedDir);
+                        if (archivedFiles != null) {
+                            for (File archivedFile : archivedFiles) {
+                                int remaining = lastLines - lines.size();
+                                List<String> archivedLines = readLastLines(archivedFile, remaining);
+                                lines.addAll(0, archivedLines);
+                                if (lines.size() >= lastLines) {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (!lines.isEmpty()) {
+                    messages.add(prefix + String.join("\n", lines));
+                }
+            } catch (IOException e) {
+                logger.error("Failed to read log file {}", logFile, e);
+            }
+        }
+    }
+
+    @Override
+    public void readIfChanged(@NonNull List<String> messages, @NonNull CommandOptions commandOptions) {
+        if (commandOptions.hasCommand(CommandOptions.COMMAND_LOAD_PREVIOUS)) {
+            if (commandOptions.hasLogId() && !getName().equals(commandOptions.getLogId())) {
+                return;
+            }
+            try {
+                int loadedLines = commandOptions.getLoadedLines();
+                List<String> lines = readPreviousLines(loadedLines, lastLines);
+                if (!lines.isEmpty()) {
+                    messages.add(plogPrefix + String.join("\n", lines));
+                } else {
+                    messages.add(plogPrefix);
+                }
+            } catch (IOException e) {
+                logger.error("Failed to read previous log lines", e);
+            }
+        } else if (commandOptions.isWithLogs()) {
+            read(messages, commandOptions);
+        }
+    }
+
+    @NonNull
+    private List<String> readPreviousLines(int loadedLines, int countToRead) throws IOException {
+        int totalSkipped = 0;
+        List<String> lines = new ArrayList<>();
+
+        // Main log file
+        if (logFile.exists()) {
+            try (ReversedLinesFileReader reader = ReversedLinesFileReader.builder()
+                    .setFile(logFile)
+                    .setCharset(charset)
+                    .get()) {
+                while (totalSkipped < loadedLines) {
+                    if (reader.readLine() == null) {
+                        break;
+                    }
+                    totalSkipped++;
+                }
+                if (totalSkipped == loadedLines) {
+                    String line;
+                    while (lines.size() < countToRead && (line = reader.readLine()) != null) {
+                        lines.add(line);
+                    }
+                    if (!lines.isEmpty()) {
+                        Collections.reverse(lines);
+                    }
+                }
+            }
+        }
+
+        if (lines.size() >= countToRead) {
+            return lines;
+        }
+
+        // Archived files
+        File archivedDir = getArchivedDir();
+        if (archivedDir.exists() && archivedDir.isDirectory()) {
+            File[] archivedFiles = getArchivedFiles(archivedDir);
+            if (archivedFiles != null) {
+                for (File archivedFile : archivedFiles) {
+                    try (ReversedLinesFileReader reader = ReversedLinesFileReader.builder()
+                            .setFile(archivedFile)
+                            .setCharset(charset)
+                            .get()) {
+                        while (totalSkipped < loadedLines) {
+                            if (reader.readLine() == null) {
+                                break;
+                            }
+                            totalSkipped++;
+                        }
+                        if (totalSkipped == loadedLines) {
+                            List<String> moreLines = new ArrayList<>();
+                            int remaining = countToRead - lines.size();
+                            String line;
+                            while (moreLines.size() < remaining && (line = reader.readLine()) != null) {
+                                moreLines.add(line);
+                            }
+                            if (!moreLines.isEmpty()) {
+                                Collections.reverse(moreLines);
+                                lines.addAll(0, moreLines);
+                            }
+                        }
+                    }
+                    if (lines.size() >= countToRead) {
+                        break;
+                    }
+                }
+            }
+        }
+        return lines;
+    }
+
+    @NonNull
+    private File getArchivedDir() {
+        String archivedDirPath = logInfo.getArchivedDir();
+        File archivedDir;
+        if (archivedDirPath != null) {
+            archivedDir = new File(archivedDirPath);
+            if (!archivedDir.isAbsolute()) {
+                archivedDir = new File(logFile.getParentFile(), archivedDirPath);
+            }
+        } else {
+            archivedDir = new File(logFile.getParentFile(), "archived");
+        }
+        return archivedDir;
+    }
+
+    private File[] getArchivedFiles(File archivedDir) {
+        String baseName = logFile.getName();
+        int dotIdx = baseName.lastIndexOf('.');
+        if (dotIdx != -1) {
+            baseName = baseName.substring(0, dotIdx);
+        }
+        final String fileNamePrefix = baseName + ".";
+        File[] archivedFiles = archivedDir.listFiles((dir, name) -> name.startsWith(fileNamePrefix));
+        if (archivedFiles != null && archivedFiles.length > 0) {
+            Arrays.sort(archivedFiles, (f1, f2) -> {
+                Matcher m1 = ARCHIVED_FILE_PATTERN.matcher(f1.getName());
+                Matcher m2 = ARCHIVED_FILE_PATTERN.matcher(f2.getName());
+                if (m1.matches() && m2.matches()) {
+                    String date1 = m1.group(1);
+                    String date2 = m2.group(1);
+                    int cmp = date2.compareTo(date1);
+                    if (cmp != 0) {
+                        return cmp;
+                    }
+                    int idx1 = m1.group(2) != null ? Integer.parseInt(m1.group(2)) : 0;
+                    int idx2 = m2.group(2) != null ? Integer.parseInt(m2.group(2)) : 0;
+                    int idxCmp = Integer.compare(idx2, idx1);
+                    if (idxCmp != 0) {
+                        return idxCmp;
+                    }
+                }
+                return Long.compare(f2.lastModified(), f1.lastModified());
+            });
+        }
+        return archivedFiles;
+    }
+
+    @NonNull
+    private List<String> readLastLines(File file, int lastLines) throws IOException {
+        List<String> list = new ArrayList<>();
+        try (ReversedLinesFileReader reversedLinesFileReader = ReversedLinesFileReader.builder()
+                .setFile(file)
+                .setCharset(charset)
+                .get()) {
+            int count = 0;
+            while (count++ < lastLines) {
+                String line = reversedLinesFileReader.readLine();
+                if (line == null) {
+                    break;
+                }
+                list.add(line);
+            }
+            Collections.reverse(list);
+        }
+        return list;
+    }
+
+    @Override
+    public void broadcast(String message) {
+        exporterManager.broadcast(prefix + message);
+    }
+
+    public void broadcast(List<String> lines) {
+        if (lines != null && !lines.isEmpty()) {
+            if (lines.size() == 1) {
+                broadcast(lines.get(0));
+            } else {
+                exporterManager.broadcast(prefix + String.join("\n", lines));
+            }
+        }
+    }
+
+    @Override
+    protected void doStart() throws Exception {
+        tailerListener = new LogTailerListener(this, exporterManager.getScheduler(), maxBatchSize, flushDelayMillis);
+        tailer = Tailer.builder()
+                .setFile(logFile)
+                .setTailerListener(tailerListener)
+                .setDelayDuration(Duration.ofMillis(sampleInterval))
+                .setTailFromEnd(true)
+                .get();
+    }
+
+    @Override
+    protected void doStop() throws Exception {
+        if (tailer != null) {
+            tailer.close();
+            tailer = null;
+        }
+        if (tailerListener != null) {
+            tailerListener.close();
+            tailerListener = null;
+        }
+    }
+
+    @Override
+    public String toString() {
+        if (isStopped()) {
+            return ToStringBuilder.toString(super.toString(), logInfo);
+        } else {
+            return super.toString();
+        }
+    }
+
+}

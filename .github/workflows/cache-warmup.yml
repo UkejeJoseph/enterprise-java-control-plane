@@ -1,0 +1,52 @@
+name: Aspectow Assets Cache Purge & Warmup
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'assets/**'
+  workflow_dispatch:
+
+jobs:
+  purge-and-warmup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Run jsDelivr Purge & Warmup
+        run: |
+          # Define jsDelivr base URL
+          JSDELIVR_BASE="https://cdn.jsdelivr.net/gh/aspectran/aspectow@main"
+          
+          # Find all css and js files under assets directory to optimize performance
+          find assets -type f \( -name "*.css" -o -name "*.js" \) ! -path '*/.*' | while read -r file; do
+            # Extract last commit date in YYYYMMDD format to use as version query parameter
+            commit_date=$(git log -1 --format="%cd" --date=format:"%Y%m%d" -- "$file" 2>/dev/null)
+            if [ -z "$commit_date" ]; then
+              commit_date=$(date +%Y%m%d)
+            fi
+            
+            # 1. jsDelivr Purge API call (file includes 'assets/' path, e.g. assets/js/theme-toggler.js)
+            purge_url="https://purge.jsdelivr.net/gh/aspectran/aspectow@main/${file}"
+            echo -n "Purging jsDelivr Cache: $purge_url -> "
+            purge_status=$(curl -s -o /dev/null -w "%{http_code}" "$purge_url")
+            echo "Status: $purge_status"
+            
+            sleep 0.5
+            
+            # 2. jsDelivr Warmup (with version query parameter)
+            jsdelivr_url_v="${JSDELIVR_BASE}/${file}?v=${commit_date}"
+            echo -n "Warming up jsDelivr (with version): $jsdelivr_url_v -> "
+            warmup_status_v=$(curl -I -s -o /dev/null -w "%{http_code}" "$jsdelivr_url_v")
+            echo "Status: $warmup_status_v"
+            
+            # 3. jsDelivr Warmup (without version query parameter)
+            jsdelivr_url_no_v="${JSDELIVR_BASE}/${file}"
+            echo -n "Warming up jsDelivr (without version): $jsdelivr_url_no_v -> "
+            warmup_status_no_v=$(curl -I -s -o /dev/null -w "%{http_code}" "$jsdelivr_url_no_v")
+            echo "Status: $warmup_status_no_v"
+            
+            echo "------------------------------------------------"
+          done

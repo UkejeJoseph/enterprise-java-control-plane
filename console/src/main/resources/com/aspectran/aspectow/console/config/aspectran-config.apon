@@ -1,0 +1,34 @@
+context: {
+    name: console
+    rules: [
+        classpath:com/aspectran/aspectow/console/config/rules/root.xml
+        /config/console/console-rules.xml
+    ]
+    scan: [
+        com.aspectran.aspectow.appmon.engine
+        com.aspectran.aspectow.console.appmon
+        com.aspectran.aspectow.console.auth
+        com.aspectran.aspectow.console.cluster
+        com.aspectran.aspectow.console.build
+        com.aspectran.aspectow.console.commands
+        com.aspectran.aspectow.console.common
+        com.aspectran.aspectow.console.framework
+        com.aspectran.aspectow.console.home
+        com.aspectran.aspectow.console.scheduler
+        com.aspectran.aspectow.console.user
+        com.aspectran.aspectow.console.vault
+    ]
+    profiles: {
+        base: [
+            h2
+        ]
+        default: [
+            dev
+        ]
+    }
+}
+scheduler: {
+    startDelaySeconds: 2
+    waitOnShutdown: true
+    enabled: true
+}

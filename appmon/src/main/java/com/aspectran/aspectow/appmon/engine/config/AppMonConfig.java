@@ -1,0 +1,165 @@
+/*
+ * Copyright (c) 2020-present The Aspectran Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.aspectran.aspectow.appmon.engine.config;
+
+import com.aspectran.utils.Assert;
+import com.aspectran.utils.apon.DefaultParameters;
+import com.aspectran.utils.apon.ParameterKey;
+import com.aspectran.utils.apon.ValueType;
+
+import java.io.File;
+import java.io.IOException;
+import java.io.Reader;
+import java.util.List;
+
+/**
+ * The main configuration class for Aspectow AppMon.
+ * It defines and holds all the necessary settings for the monitoring application,
+ * such as polling configuration, domain information, and instance details.
+ * This class is based on APON (Aspectran Object Notation).
+ *
+ * <p>Created: 2024/12/17</p>
+ */
+public class AppMonConfig extends DefaultParameters {
+
+    private static final ParameterKey pollingConfig;
+    private static final ParameterKey counterPersistInterval;
+    private static final ParameterKey app;
+
+    private static final ParameterKey[] parameterKeys;
+
+    static {
+        pollingConfig = new ParameterKey("pollingConfig", PollingConfig.class);
+        counterPersistInterval = new ParameterKey("counterPersistInterval", ValueType.INT);
+        app = new ParameterKey("apps", new String[] {"app"}, AppInfo.class, true, true);
+
+        parameterKeys = new ParameterKey[] {
+                pollingConfig,
+                counterPersistInterval,
+                app
+        };
+    }
+
+    /**
+     * Instantiates a new AppMonConfig.
+     */
+    public AppMonConfig() {
+        super(parameterKeys);
+    }
+
+    /**
+     * Instantiates a new AppMonConfig and reads configuration from the given reader.
+     * @param reader the reader to read the configuration from
+     * @throws IOException if an I/O error occurs
+     */
+    public AppMonConfig(Reader reader) throws IOException {
+        this();
+        readFrom(reader);
+    }
+
+    /**
+     * Instantiates a new AppMonConfig and reads configuration from the given file.
+     * @param configFile the file to read the configuration from
+     * @throws IOException if an I/O error occurs
+     */
+    public AppMonConfig(File configFile) throws IOException {
+        this();
+        readFrom(configFile);
+    }
+
+    /**
+     * Gets the polling configuration.
+     * @return the polling configuration
+     */
+    public PollingConfig getPollingConfig() {
+        return getParameters(pollingConfig);
+    }
+
+    public PollingConfig touchPollingConfig() {
+        return touchParameters(pollingConfig);
+    }
+
+    /**
+     * Sets the polling configuration.
+     * @param pollingConfig the polling configuration
+     */
+    public void setPollingConfig(PollingConfig pollingConfig) {
+        putValue(AppMonConfig.pollingConfig, pollingConfig);
+    }
+
+    /**
+     * Gets the counter persistence interval in minutes.
+     * @param defaultValue the default value to return if the interval is not set
+     * @return the interval in minutes
+     */
+    public int getCounterPersistInterval(int defaultValue) {
+        return getInt(counterPersistInterval, defaultValue);
+    }
+
+    /**
+     * Gets the list of instance information.
+     * @return the list of instance information
+     */
+    public List<AppInfo> getAppInfoList() {
+        return getParametersList(app);
+    }
+
+    /**
+     * Gets the list of event information for a specific instance.
+     * @param appId the name of the instance
+     * @return the list of event information, or {@code null} if the instance is not found
+     */
+    public List<EventInfo> getEventInfoList(String appId) {
+        Assert.notNull(appId, "appId must not be null");
+        for (AppInfo appInfo : getAppInfoList()) {
+            if (appId.equals(appInfo.getAppId())) {
+                return appInfo.getEventInfoList();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Gets the list of metric information for a specific instance.
+     * @param appId the name of the instance
+     * @return the list of metric information, or {@code null} if the instance is not found
+     */
+    public List<MetricInfo> getMetricInfoList(String appId) {
+        Assert.notNull(appId, "appId must not be null");
+        for (AppInfo appInfo : getAppInfoList()) {
+            if (appId.equals(appInfo.getAppId())) {
+                return appInfo.getMetricInfoList();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Gets the list of log information for a specific instance.
+     * @param appId the name of the instance
+     * @return the list of log information, or {@code null} if the instance is not found
+     */
+    public List<LogInfo> getLogInfoList(String appId) {
+        Assert.notNull(appId, "appId must not be null");
+        for (AppInfo appInfo : getAppInfoList()) {
+            if (appId.equals(appInfo.getAppId())) {
+                return appInfo.getLogInfoList();
+            }
+        }
+        return null;
+    }
+
+}

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE aspectran PUBLIC "-//ASPECTRAN//DTD Aspectran 9.0//EN"
+        "https://aspectran.com/dtd/aspectran-9.dtd">
+<aspectran>
+
+    <description>
+        Aspectran configuration to configure the web environment.
+        Note that names of translets that match the request URI always start with a forward slash (/).
+    </description>
+
+    <translet name="/">
+        <redirect path="/console/"/>
+    </translet>
+
+    <translet name="/test">
+        <response>
+            <transform format="text/plain">
+                <template>Test</template>
+            </transform>
+        </response>
+    </translet>
+
+</aspectran>

@@ -1,0 +1,218 @@
+/*
+ * Copyright (c) 2020-present The Aspectran Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.aspectran.aspectow.appmon.engine.manager;
+
+import com.aspectran.aspectow.appmon.engine.config.AppInfo;
+import com.aspectran.aspectow.appmon.engine.config.AppInfoHolder;
+import com.aspectran.aspectow.appmon.engine.config.AppMonConfig;
+import com.aspectran.aspectow.appmon.engine.config.EventInfo;
+import com.aspectran.aspectow.appmon.engine.config.LogInfo;
+import com.aspectran.aspectow.appmon.engine.config.MetricInfo;
+import com.aspectran.aspectow.appmon.engine.config.PollingConfig;
+import com.aspectran.aspectow.appmon.engine.exporter.ExporterManager;
+import com.aspectran.aspectow.appmon.engine.exporter.ExporterType;
+import com.aspectran.aspectow.appmon.engine.exporter.event.ChartDataExporter;
+import com.aspectran.aspectow.appmon.engine.exporter.event.ChartDataExporterBuilder;
+import com.aspectran.aspectow.appmon.engine.exporter.event.EventExporter;
+import com.aspectran.aspectow.appmon.engine.exporter.event.EventExporterBuilder;
+import com.aspectran.aspectow.appmon.engine.exporter.log.LogExporter;
+import com.aspectran.aspectow.appmon.engine.exporter.log.LogExporterBuilder;
+import com.aspectran.aspectow.appmon.engine.exporter.metric.MetricExporter;
+import com.aspectran.aspectow.appmon.engine.exporter.metric.MetricExporterBuilder;
+import com.aspectran.aspectow.appmon.engine.persist.counter.EventCounter;
+import com.aspectran.aspectow.appmon.engine.persist.counter.EventCounterBuilder;
+import com.aspectran.aspectow.appmon.engine.relay.remote.NodeMessageRelayHandler;
+import com.aspectran.aspectow.node.config.NodeInfo;
+import com.aspectran.aspectow.node.manager.ClusterEventListener;
+import com.aspectran.aspectow.node.manager.NodeManager;
+import com.aspectran.aspectow.node.manager.NodeRegistryListener;
+import com.aspectran.core.context.ActivityContext;
+import com.aspectran.utils.Assert;
+import org.jspecify.annotations.NonNull;
+
+import java.util.List;
+
+import static com.aspectran.aspectow.appmon.engine.schedule.CounterPersistSchedule.DEFAULT_SAMPLE_INTERVAL_IN_MINUTES;
+
+/**
+ * A builder for creating and configuring the main {@link AppMonManager} instance.
+ * It orchestrates the entire setup process, including the creation of exporters and other sub-components.
+ *
+ * <p>Created: 2024-12-17</p>
+ */
+public abstract class AppMonManagerBuilder {
+
+    /**
+     * Builds a fully configured {@link AppMonManager} instance.
+     * @param context the activity context
+     * @param appMonConfig the application monitoring configuration
+     * @return a new, fully initialized {@link AppMonManager} instance
+     * @throws Exception if the build process fails
+     */
+    @NonNull
+    public static AppMonManager build(ActivityContext context, AppMonConfig appMonConfig) throws Exception {
+        Assert.notNull(context, "context must not be null");
+        Assert.notNull(appMonConfig, "appMonConfig must not be null");
+
+        if (!context.getBeanRegistry().containsBean(NodeManager.class)) {
+            throw new Exception("NodeManager is not defined");
+        }
+        NodeManager nodeManager = context.getBeanRegistry().getBean(NodeManager.class);
+        String nodeId = nodeManager.getNodeId();
+        String groupId = nodeManager.getGroupId();
+
+        List<AppInfo> appInfoList = appMonConfig.getAppInfoList();
+        AppInfoHolder appInfoHolder = new AppInfoHolder(nodeId, groupId, appInfoList);
+
+        PollingConfig pollingConfig = appMonConfig.touchPollingConfig();
+        int counterPersistInterval = appMonConfig.getCounterPersistInterval(DEFAULT_SAMPLE_INTERVAL_IN_MINUTES);
+
+        AppMonManager appMonManager = new AppMonManager(nodeManager, appInfoHolder, pollingConfig, counterPersistInterval);
+        appMonManager.setActivityContext(context);
+
+        try {
+            for (AppInfo appInfo : appMonManager.getAppInfoList()) {
+                String appId = appInfo.getAppId();
+
+                List<EventInfo> eventInfoList = appInfo.getEventInfoList();
+                if (eventInfoList != null && !eventInfoList.isEmpty()) {
+                    buildEventExporters(appMonManager, appId, eventInfoList);
+                }
+
+                List<MetricInfo> metricInfoList = appInfo.getMetricInfoList();
+                if (metricInfoList != null && !metricInfoList.isEmpty()) {
+                    buildMetricExporters(appMonManager, appId, metricInfoList);
+                }
+
+                List<LogInfo> logInfoList = appInfo.getLogInfoList();
+                if (logInfoList != null && !logInfoList.isEmpty()) {
+                    buildLogExporters(appMonManager, appId, logInfoList);
+                }
+            }
+
+            if (appMonManager.isGatewayMode()) {
+                if (nodeManager.getClusterEventSubscriber() != null) {
+                    ClusterEventListener clusterEventListener = new ClusterEventListener() {
+                        @Override
+                        public void onNodeJoined(NodeInfo info) {
+                            appMonManager.getMessageRelayManager().nodeJoined(info);
+                        }
+
+                        @Override
+                        public void onNodeLeft(String leftNodeId) {
+                            appMonManager.getMessageRelayManager().nodeLeft(leftNodeId);
+                        }
+
+                        @Override
+                        public void onNodeStatusChanged(NodeInfo info) {
+                            appMonManager.getMessageRelayManager().nodeStatusChanged(info);
+                        }
+                    };
+                    nodeManager.getClusterEventSubscriber().addListener(clusterEventListener);
+                    appMonManager.setClusterEventListener(clusterEventListener);
+                }
+
+                if (nodeManager.getNodeMessageSubscriber() != null) {
+                    NodeMessageRelayHandler nodeMessageRelayHandler = new NodeMessageRelayHandler(appMonManager.getMessageRelayManager());
+                    nodeManager.getNodeMessageSubscriber().addListener(nodeMessageRelayHandler);
+                    appMonManager.setNodeMessageRelayHandler(nodeMessageRelayHandler);
+                }
+
+                // Register app metadata to Redis
+                appMonManager.registerAppInfoToRedis();
+
+                if (nodeManager.getNodeRegistry() != null) {
+                    NodeRegistryListener nodeRegistryListener = new NodeRegistryListener() {
+                        @Override
+                        public void onNodeRegistered(@NonNull NodeInfo nodeInfo) {
+                            if (nodeManager.getNodeId().equals(nodeInfo.getId())) {
+                                appMonManager.registerAppInfoToRedis();
+                            }
+                        }
+
+                        @Override
+                        public void onNodeUnregistered(String nodeId) {
+                            if (nodeManager.getNodeId().equals(nodeId)) {
+                                appMonManager.unregisterAppInfoFromRedis();
+                            }
+                        }
+                    };
+                    nodeManager.getNodeRegistry().addListener(nodeRegistryListener);
+                    appMonManager.setNodeRegistryListener(nodeRegistryListener);
+                }
+            }
+
+            return appMonManager;
+        } catch (Exception e) {
+            appMonManager.destroy();
+            throw e;
+        }
+    }
+
+    private static void buildEventExporters(
+            AppMonManager appMonManager, String appId,
+            @NonNull List<EventInfo> eventInfoList) throws Exception {
+        ExporterManager eventExporterManager = new ExporterManager(ExporterType.EVENT, appMonManager, appId);
+        ExporterManager dataExporterManager = new ExporterManager(ExporterType.DATA, appMonManager, appId);
+        for (EventInfo eventInfo : eventInfoList) {
+            eventInfo.validateRequiredParameters();
+
+            EventCounter eventCounter = EventCounterBuilder.build(eventInfo);
+            if (eventCounter != null) {
+                appMonManager.getPersistManager().getCounterPersist().addEventCounter(eventCounter);
+
+                EventExporter eventExporter = EventExporterBuilder.build(eventExporterManager, eventInfo, eventCounter.getEventCount());
+                eventExporterManager.addExporter(eventExporter);
+
+                ChartDataExporter chartDataExporter = ChartDataExporterBuilder.build(dataExporterManager, eventInfo);
+                eventCounter.addEventRollupListener(chartDataExporter);
+                dataExporterManager.addExporter(chartDataExporter);
+            } else {
+                EventExporter eventExporter = EventExporterBuilder.build(eventExporterManager, eventInfo, null);
+                eventExporterManager.addExporter(eventExporter);
+            }
+        }
+        appMonManager.getMessageRelayManager().addExporterManager(eventExporterManager);
+        appMonManager.getMessageRelayManager().addExporterManager(dataExporterManager);
+    }
+
+    private static void buildMetricExporters(
+            AppMonManager appMonManager, String appId,
+            @NonNull List<MetricInfo> metricInfoList) throws Exception {
+        ExporterManager metricExporterManager = new ExporterManager(ExporterType.METRIC, appMonManager, appId);
+        for (MetricInfo metricInfo : metricInfoList) {
+            metricInfo.validateRequiredParameters();
+
+            MetricExporter eventExporter = MetricExporterBuilder.build(metricExporterManager, metricInfo);
+            metricExporterManager.addExporter(eventExporter);
+        }
+        appMonManager.getMessageRelayManager().addExporterManager(metricExporterManager);
+    }
+
+    private static void buildLogExporters(
+            AppMonManager appMonManager, String appId,
+            @NonNull List<LogInfo> logInfoList) throws Exception {
+        ExporterManager logExporterManager = new ExporterManager(ExporterType.LOG, appMonManager, appId);
+        for (LogInfo logInfo : logInfoList) {
+            logInfo.validateRequiredParameters();
+
+            LogExporter logExporter = LogExporterBuilder.build(logExporterManager, logInfo);
+            logExporterManager.addExporter(logExporter);
+        }
+        appMonManager.getMessageRelayManager().addExporterManager(logExporterManager);
+    }
+
+}

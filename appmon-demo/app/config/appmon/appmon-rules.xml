@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE aspectran PUBLIC "-//ASPECTRAN//DTD Aspectran 9.0//EN"
+        "https://aspectran.com/dtd/aspectran-9.dtd">
+<aspectran>
+
+    <!-- Specifies the URL to return to the main portal or home site from the AppMon UI.
+         Resolves the system property 'aspectow.appmon.portalUrl'. -->
+    <environment>
+        <property name="aspectow.appmon.portalUrl">%{system:aspectow.appmon.portalUrl}</property>
+    </environment>
+
+    <bean class="com.aspectran.aspectow.appmon.engine.config.AppMonConfigResolver">
+        <!-- Netty (Default) -->
+        <properties profile="(!prod, !undertow)">
+            <item name="configLocation">/config/appmon/appmon-config.apon</item>
+        </properties>
+        <properties profile="(prod, !undertow)">
+            <item name="configLocation">/config/appmon/appmon-config-prod.apon</item>
+        </properties>
+
+        <!-- Undertow -->
+        <properties profile="(!prod, undertow)">
+            <item name="configLocation">/config/appmon/appmon-config-undertow.apon</item>
+        </properties>
+        <properties profile="(prod, undertow)">
+            <item name="configLocation">/config/appmon/appmon-config-undertow-prod.apon</item>
+        </properties>
+    </bean>
+
+    <append file="/config/appmon/node-rules.xml" profile="!gateway"/>
+    <append file="/config/appmon/node-rules-gateway.xml" profile="gateway"/>
+
+</aspectran>
