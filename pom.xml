@@ -119,7 +119,7 @@
 
         <aspectran.version>9.7.2-SNAPSHOT</aspectran.version>
         <lettuce.version>7.8.0.RELEASE</lettuce.version>
-        <netty.version>4.2.18.Final</netty.version>
+        <netty.version>4.2.20.Final</netty.version>
     </properties>
 
     <dependencyManagement>
